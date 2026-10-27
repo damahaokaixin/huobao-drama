@@ -30,8 +30,8 @@ export function parseConfigTemperature(settingsRaw: string | null | undefined): 
 }
 
 export const officialProviders: Record<ServiceType, readonly string[]> = {
-  text: ['openai', 'gemini', 'volcengine'],
-  image: ['openai', 'gemini', 'volcengine'],
+  text: ['openai', 'gemini', 'volcengine', 'minimax'],
+  image: ['openai', 'gemini', 'volcengine', 'minimax'],
   video: ['volcengine', 'minimax', 'aliyun'],
 }
 
@@ -44,6 +44,11 @@ export function getTextProviderBaseUrl(config: AIConfig) {
   const provider = config.provider.toLowerCase()
 
   if (provider === 'openai') {
+    return joinProviderUrl(config.baseUrl, '/v1', '')
+  }
+
+  // MiniMax 文本走 OpenAI 兼容协议（POST {base}/v1/chat/completions）
+  if (provider === 'minimax') {
     return joinProviderUrl(config.baseUrl, '/v1', '')
   }
 

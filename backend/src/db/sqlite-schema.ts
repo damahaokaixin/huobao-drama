@@ -218,6 +218,7 @@ export const sqliteSchemaStatements = [
     local_path TEXT,
     status TEXT DEFAULT 'processing',
     error_msg TEXT,
+    error_detail TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -380,7 +381,14 @@ export function initSqliteSchema(sqlite: Database.Database) {
   }
   // 兼容已安装的桌面版；仅增加任务恢复元数据，不改写历史生成结果。
   const taskColumns = new Set((sqlite.prepare('PRAGMA table_info(sys_task)').all() as { name: string }[]).map(c => c.name))
-  for (const [name, type] of Object.entries({ config_id: 'INTEGER', config_base_url: 'TEXT', stage: 'TEXT', error_code: 'TEXT' })) {
+  for (const [name, type] of Object.entries({
+    config_id: 'INTEGER',
+    config_base_url: 'TEXT',
+    stage: 'TEXT',
+    error_code: 'TEXT',
+    // 结构化失败详情（JSON）：失败环节 / HTTP 状态 / 厂商错误码 / 请求与响应摘要 / 排查建议
+    error_detail: 'TEXT',
+  })) {
     if (!taskColumns.has(name)) sqlite.exec(`ALTER TABLE sys_task ADD COLUMN ${name} ${type}`)
   }
   const insertSeed = sqlite.prepare(SEED_SQL)

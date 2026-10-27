@@ -45,6 +45,15 @@ export interface ImageProviderAdapter {
 /**
  * 视频生成 Provider Adapter 接口
  */
+/**
+ * 轮询上下文 — 同一家厂商可能存在多套 API 版本（如 MiniMax H3 用 v2、
+ * Hailuo 经典模型用 v1），轮询时需要知道实际提交用的是哪个模型。
+ */
+export interface ProviderPollContext {
+  /** 实际提交任务时使用的模型名 */
+  model?: string | null
+}
+
 export interface VideoProviderAdapter {
   provider: string
 
@@ -52,11 +61,23 @@ export interface VideoProviderAdapter {
 
   parseGenerateResponse(result: any): VideoGenResponse
 
-  buildPollRequest(config: AIConfig, taskId: string): ProviderRequest
+  buildPollRequest(config: AIConfig, taskId: string, context?: ProviderPollContext): ProviderRequest
 
   parsePollResponse(result: any): VideoPollResponse
 
   extractVideoUrl(result: any): string | null
+
+  /**
+   * 可选：轮询成功后把上游原始结果解析为可下载 URL
+   * （MiniMax v1 视频成功后拿到的是 file_id，需再调 /v1/files/retrieve 取下载地址）
+   */
+  resolveVideoUrl?(config: AIConfig, poll: VideoPollResponse, raw: any): Promise<string | null>
+
+  /**
+   * 可选：构造上游「交付恢复」请求
+   * （部分网关支持对已生成但下载失败的任务重新拉取结果）
+   */
+  buildRecoveryRequest?(config: AIConfig, taskId: string, context?: ProviderPollContext): ProviderRequest
 }
 
 // ============ 通用类型 ============
@@ -88,6 +109,8 @@ export interface ImageGenerationRecord {
   size?: string | null
   frameType?: string | null
   referenceImages?: string | null
+  /** 画风（MiniMax image-01-live 的 style.style_type） */
+  style?: string | null
   // ... 其他字段
 }
 
@@ -139,5 +162,10 @@ export interface VideoPollResponse {
   stage?: 'transferring'
   videoUrl?: string
   duration?: number
+  /** 上游文件 ID（MiniMax v1 视频成功后先拿 file_id 再换下载地址） */
+  fileId?: string
+  /** 成片实际分辨率（MiniMax v1 轮询返回 video_width / video_height） */
+  width?: number
+  height?: number
   error?: string
 }

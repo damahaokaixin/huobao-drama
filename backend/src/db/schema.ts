@@ -221,6 +221,8 @@ export const sysTask = sqliteTable('sys_task', {
   localPath: text('local_path'),
   status: text('status').default('processing'),
   errorMsg: text('error_msg'),
+  /** 结构化失败详情（JSON）：失败环节 / HTTP 状态 / 厂商错误码 / 请求与响应摘要 / 排查建议 */
+  errorDetail: text('error_detail'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
   completedAt: text('completed_at'),

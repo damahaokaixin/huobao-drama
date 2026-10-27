@@ -5,7 +5,10 @@ import { success, notFound, created, badRequest, now } from '../utils/response.j
 import { toSnakeCase } from '../utils/transform.js'
 import { joinProviderUrl } from '../services/adapters/url.js'
 import { isOfficialProvider, parseConfigTemperature } from '../services/ai.js'
-import { redactUrl, logTaskError, logTaskProgress, logTaskSuccess } from '../utils/task-logger.js'
+import { logTestResult, runConnectionTest } from '../services/ai-connection-test.js'
+import { fetchMiniMaxPlanQuota } from '../services/adapters/minimax-plan.js'
+import { hintForCode, parseBaseResp } from '../services/adapters/minimax-common.js'
+import { redactUrl, logTaskProgress } from '../utils/task-logger.js'
 
 const app = new Hono()
 
@@ -42,6 +45,10 @@ function geminiHeaders(apiKey?: string, withJson = false) {
   return headers
 }
 
+/**
+ * 轻量探针 —— 只验证「端点可达 + 鉴权是否被拒」，不产生任何计费任务。
+ * 供 mode='light' 使用：用户不想为了验证配置而真实生成内容时可选。
+ */
 function buildProbe(serviceType: string, provider: string, baseUrl: string, model?: string, apiKey?: string) {
   const p = provider.toLowerCase()
   const m = model || ''
@@ -85,10 +92,15 @@ function buildProbe(serviceType: string, provider: string, baseUrl: string, mode
   }
 
   if (p === 'minimax') {
-    // MiniMax 仅提供视频服务，空请求体探测鉴权/端点连通性
+    // MiniMax 轻量探针按服务类型挑端点：空请求体不会创建计费任务
+    // 视频按模型族分流：H3 走 v2，Hailuo 经典系列走 v1
+    const isH3 = /^minimax-h3/i.test(m)
+    let path = '/v1/chat/completions'
+    if (serviceType === 'video') path = isH3 ? '/v2/video_generation' : '/v1/video_generation'
+    else if (serviceType === 'image') path = '/v1/image_generation'
     return {
       method: 'POST',
-      url: joinProviderUrl(baseUrl, '/v2', '/video_generation'),
+      url: joinProviderUrl(baseUrl, '', path),
       headers: bearerHeaders(apiKey, true),
       body: {},
     }
@@ -112,6 +124,105 @@ function buildProbe(serviceType: string, provider: string, baseUrl: string, mode
     url: joinProviderUrl(baseUrl, '', m ? `/${m}` : '/'),
     headers: bearerHeaders(apiKey),
     body: undefined,
+  }
+}
+
+/** 轻量探针：只看端点是否可达、鉴权是否被拒 */
+async function runLightProbe(input: {
+  serviceType: string
+  provider: string
+  baseUrl: string
+  apiKey?: string
+  model?: string
+}) {
+  const probe = buildProbe(input.serviceType, input.provider, input.baseUrl, input.model, input.apiKey)
+  const started = Date.now()
+  const resp = await fetch(probe.url, {
+    method: probe.method,
+    headers: probe.headers,
+    body: probe.body ? JSON.stringify(probe.body) : undefined,
+    signal: AbortSignal.timeout(30_000),
+  })
+  const text = await resp.text()
+  const reachable = [200, 204, 400, 401, 403].includes(resp.status)
+
+  // MiniMax 把业务错误放在 base_resp 里：HTTP 200 也可能是鉴权/参数失败，
+  // 不解析的话轻量探针会把「Key 无效」误报成「端点可访问」。
+  const base = input.provider.toLowerCase() === 'minimax' ? parseBaseResp(safeJson(text)) : {}
+  const businessError = base.statusCode != null && base.statusCode !== 0
+
+  const ok = resp.ok && !businessError
+  const stage = ok
+    ? 'success'
+    : businessError
+      ? (base.statusCode === 1004 || base.statusCode === 2049 ? 'auth' : 'response')
+      : reachable ? 'auth' : 'config'
+
+  return {
+    ok,
+    reachable,
+    service_type: input.serviceType,
+    provider: input.provider,
+    model: input.model || '',
+    status: resp.status,
+    stage,
+    message: ok
+      ? '端点可访问，认证与路径基本正常（轻量探测，未真实调用模型）'
+      : businessError
+        ? (base.statusMsg || `厂商返回错误码 ${base.statusCode}`)
+        : reachable
+          ? '端点已响应，请根据状态码判断认证或路径是否正确'
+          : '端点未按预期响应，请检查 Base URL 和代理前缀',
+    method: probe.method,
+    url: redactUrl(probe.url),
+    latency_ms: Date.now() - started,
+    response_preview: text.slice(0, 2000),
+    detail: { light: true },
+    provider_code: businessError ? base.statusCode : undefined,
+    provider_message: businessError ? base.statusMsg : undefined,
+    suggestion: ok
+      ? undefined
+      : businessError
+        ? (hintForCode(base.statusCode, base.statusMsg) || '可改用「真实测试」以确认模型确实可用')
+        : '可改用「真实测试」以确认模型确实可用',
+  }
+}
+
+function safeJson(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+/** 轻量探针：只看端点是否可达、鉴权是否被拒；网络异常也返回结构化结果而不是 500 */
+async function runLightProbeSafe(input: {
+  serviceType: string
+  provider: string
+  baseUrl: string
+  apiKey?: string
+  model?: string
+}) {
+  try {
+    return await runLightProbe(input)
+  } catch (error: any) {
+    return {
+      ok: false,
+      reachable: false,
+      service_type: input.serviceType,
+      provider: input.provider,
+      model: input.model || '',
+      status: null,
+      stage: 'request',
+      message: error?.message || '请求失败',
+      method: '—',
+      url: redactUrl(input.baseUrl),
+      latency_ms: 0,
+      response_preview: '',
+      detail: { light: true },
+      suggestion: '网络请求失败：请检查 Base URL、网络连通性与代理设置',
+    }
   }
 }
 
@@ -168,6 +279,8 @@ app.post('/', async (c) => {
 })
 
 // POST /ai-configs/test
+// 真实连通性测试：实际调用一次模型（文本发最小对话、图片真出一张、视频真提交一单），
+// 返回成功结论 / 失败环节 / 厂商错误码 / 原始响应 / 可操作建议。
 app.post('/test', async (c) => {
   const body = await c.req.json()
   if (!body.service_type || !body.provider || !body.base_url) {
@@ -178,65 +291,54 @@ app.post('/test', async (c) => {
   }
 
   const model = Array.isArray(body.model) ? body.model[0] : body.model
-  const probe = buildProbe(body.service_type, body.provider, body.base_url, model, body.api_key)
-  const probeUrl = redactUrl(probe.url)
+  // mode='light'：只探测端点可达性，不真实调用模型（不产生计费）
+  const light = body.mode === 'light'
 
-  logTaskProgress('AIConfig', 'probe-start', {
+  logTaskProgress('AIConfig', light ? 'probe-start' : 'test-start', {
     serviceType: body.service_type,
     provider: body.provider,
-    method: probe.method,
-    url: probeUrl,
+    model: model || '',
+    baseUrl: redactUrl(body.base_url),
   })
 
-  try {
-    const resp = await fetch(probe.url, {
-      method: probe.method,
-      headers: probe.headers,
-      body: probe.body ? JSON.stringify(probe.body) : undefined,
-    })
-    const text = await resp.text()
-    const reachable = [200, 204, 400, 401, 403].includes(resp.status)
-    const payload = {
-      ok: resp.ok,
-      reachable,
-      status: resp.status,
-      status_text: resp.statusText,
-      method: probe.method,
-      url: probeUrl,
-      message: reachable
-        ? (resp.ok ? '端点可访问，认证与路径基本正常' : '端点已响应，请根据状态码判断认证或路径是否正确')
-        : '端点未按预期响应，请检查 Base URL 和代理前缀',
-      response_preview: text.slice(0, 240),
-    }
-    if (reachable) {
-      logTaskSuccess('AIConfig', 'probe-done', {
+  const result = light
+    ? await runLightProbeSafe({
+        serviceType: body.service_type,
         provider: body.provider,
-        status: resp.status,
-        url: probeUrl,
+        baseUrl: body.base_url,
+        apiKey: body.api_key,
+        model,
       })
-    } else {
-      logTaskError('AIConfig', 'probe-unexpected', {
+    : await runConnectionTest({
+        serviceType: body.service_type,
         provider: body.provider,
-        status: resp.status,
-        url: probeUrl,
+        baseUrl: body.base_url,
+        apiKey: body.api_key,
+        model,
       })
-    }
-    return success(c, payload)
-  } catch (error: any) {
-    logTaskError('AIConfig', 'probe-failed', {
-      provider: body.provider,
-      url: probeUrl,
-      error: error.message,
-    })
-    return success(c, {
-      ok: false,
-      reachable: false,
-      method: probe.method,
-      url: probeUrl,
-      message: error.message || '请求失败',
-      response_preview: '',
-    })
+
+  logTestResult(result as any)
+  return success(c, result)
+})
+
+// POST /ai-configs/plan-quota
+// 查询 MiniMax 订阅套餐（Token Plan / M Plan）剩余额度。
+// 订阅 Key（sk-cp 开头）才有套餐额度；用按量 Key 调会得到 1004/401，
+// 这一点本身就是有价值的诊断信息（说明 Key 类型填错了）。
+app.post('/plan-quota', async (c) => {
+  const body = await c.req.json()
+  if (String(body.provider || '').toLowerCase() !== 'minimax') {
+    return badRequest(c, '仅 MiniMax 支持订阅额度查询')
   }
+  const baseUrl = String(body.base_url || '').trim()
+  const apiKey = String(body.api_key || '').trim()
+  if (!baseUrl) return badRequest(c, '需要 base_url')
+  if (!apiKey) return badRequest(c, '需要 api_key')
+
+  logTaskProgress('AIConfig', 'plan-quota-start', { baseUrl: redactUrl(baseUrl) })
+  const quota = await fetchMiniMaxPlanQuota(baseUrl, apiKey)
+  logTaskProgress('AIConfig', 'plan-quota-done', { ok: quota.ok, keyType: quota.keyType })
+  return success(c, quota)
 })
 
 // GET /ai-configs/:id

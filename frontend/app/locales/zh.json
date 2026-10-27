@@ -405,7 +405,32 @@
       "reachable": "端点已响应",
       "unreachable": "端点未通过测试",
       "providerRequired": "选择服务商",
-      "tempInvalid": "Temperature 需为 0~2 的数字"
+      "tempInvalid": "Temperature 需为 0~2 的数字",
+      "testReal": "真实测试",
+      "testLight": "轻量探测",
+      "testOk": "测试通过",
+      "testFailed": "测试失败",
+      "testRealHint": "真实调用一次模型，确认配置确实可用（文本仅消耗极少 token）",
+      "testQuotaHint": "真实调用会实际生成一次内容，可能产生少量计费；只想验证地址与鉴权请用「轻量探测」",
+      "testQuotaImage": "真实测试会实际生成 1 张图片，可能产生少量计费。",
+      "testQuotaVideo": "真实测试会实际提交 1 个视频任务并短轮询，可能产生少量计费。",
+      "stage": "环节",
+      "providerCode": "厂商错误码",
+      "baseUrlRequired": "请填写 Base URL",
+      "keyType": "Key 类型",
+      "keyTypeSubscription": "订阅 Key（套餐）",
+      "keyTypePayg": "按量计费",
+      "keyTypeUnknown": "未知",
+      "keyHintSubscription": "检测到订阅 Key（sk-cp 开头）：走 Token Plan / M Plan 套餐额度，不消耗账户余额。文本 / 图片 / 语音受 5 小时窗口与周窗口约束，视频只受周窗口约束。",
+      "keyHintPayg": "检测到按量计费 Key（sk-api 开头）：消耗账户余额，不会使用套餐额度。H3 的 v2 接口需要按量付费（或使用含视频模型的 M Plan Explore / Build 档位）。",
+      "planQuotaTitle": "订阅套餐额度",
+      "planQuotaQuery": "查询额度",
+      "planQuotaHint": "仅订阅 Key（sk-cp 开头）可查询；额度按 5 小时窗口与周窗口分别结算，两者独立刷新。",
+      "planQuotaFailed": "查询失败",
+      "planQuotaReset": "重置时间",
+      "planWindow5h": "5 小时窗口",
+      "planWindowWeekly": "周窗口",
+      "planQuotaNeedKey": "请先填写 Base URL 与 API Key"
     },
     "styleDialog": {
       "editTitle": "编辑风格预设",
@@ -455,7 +480,9 @@
       "viewFilm": "查看成片",
       "continue": "继续制作",
       "start": "开始制作",
-      "resolution": "分辨率"
+      "resolution": "分辨率",
+      "imageStyle": "画风",
+      "imageStyleNone": "默认（不指定）"
     },
     "model": {
       "defaultWith": "默认 · {model}",
@@ -876,7 +903,22 @@
       "restoreFailed": "恢复视频({n})",
       "transferring": "视频已生成，转存中",
       "awaitingDelivery": "视频已生成，等待交付",
-      "restoreHint": "恢复已有任务，避免重复生成"
+      "restoreHint": "恢复已有任务，避免重复生成",
+      "failureDetail": "查看失败详情",
+      "failureDetailTitle": "失败详情",
+      "failureStage": "失败环节",
+      "failureHttpStatus": "HTTP 状态",
+      "failureProviderCode": "厂商错误码",
+      "failureProviderMessage": "厂商错误信息",
+      "failureRequestUrl": "请求地址",
+      "failureRequestBody": "请求参数",
+      "failureResponseBody": "响应内容",
+      "failureHint": "排查建议",
+      "failureUpstreamTask": "上游任务号",
+      "failureTime": "发生时间",
+      "noFailureDetail": "该任务没有记录结构化失败详情",
+      "copyFailureDetail": "复制详情",
+      "failureDetailCopied": "失败详情已复制"
     }
   },
   "errors": {

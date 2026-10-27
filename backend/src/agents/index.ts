@@ -174,6 +174,34 @@ function isOfficialTextHost(baseURL: string) {
   return /api\.openai\.com|generativelanguage\.googleapis\.com/.test(baseURL)
 }
 
+/**
+ * MiniMax 文本补丁
+ *
+ * MiniMax 的 OpenAI 兼容接口（POST {base}/v1/chat/completions）与其它厂商有两处差异：
+ * 1. 输出上限参数是 max_completion_tokens（M2.x 上限约 204800，M3 上限 524288），
+ *    传 max_tokens 会被忽略或报错，因此这里删除 max_tokens 只写 max_completion_tokens。
+ * 2. M3 支持 thinking.type=disabled 关闭思考；M2.x 的 thinking 无法关闭。
+ *    绝不能注入 enable_thinking / reasoning_effort —— MiniMax 对未知参数直接返回 400。
+ */
+function createMiniMaxTextFetch(modelName: string, inner?: typeof fetch): typeof fetch {
+  const base = inner || fetch
+  const supportsThinkingOff = /^minimax-m3/i.test(String(modelName || '').trim())
+  return async (input: any, init?: any) => {
+    try {
+      if (init?.body && typeof init.body === 'string') {
+        const body = JSON.parse(init.body)
+        if (Array.isArray(body?.messages)) {
+          delete body.max_tokens
+          body.max_completion_tokens = defaultMaxTokens
+          if (supportsThinkingOff) body.thinking = { type: 'disabled' }
+          init = { ...init, body: JSON.stringify(body) }
+        }
+      }
+    } catch { /* 解析失败则原样透传 */ }
+    return base(input, init)
+  }
+}
+
 function openaiThinkingOffPatch(): Record<string, any> {
   const fallback = {
     thinking: { type: 'disabled' },   // new-api 通用 / DeepSeek
@@ -310,13 +338,17 @@ async function getModel(fileModel: string | undefined, modelOverride?: string, t
   }
 
   // 叠加请求补丁：thinking-off（非官方端点）+ 配置温度 + 输出上限（非官方 OpenAI）
-  const thinkingOffFetch = createThinkingOffFetch(providerName, resolvedBaseURL)
+  const isMiniMax = providerName === 'minimax'
+  const thinkingOffFetch = isMiniMax ? undefined : createThinkingOffFetch(providerName, resolvedBaseURL)
   const tempFetch = temperature !== null
     ? createTemperatureFetch(providerName, temperature, thinkingOffFetch)
     : thinkingOffFetch
-  const fetchImpl = isOfficialOpenAIHost(resolvedBaseURL)
-    ? tempFetch
-    : createMaxTokensFetch(providerName, tempFetch)
+  const fetchImpl = isMiniMax
+    // MiniMax 用 max_completion_tokens，且不接受 enable_thinking / reasoning_effort
+    ? createMiniMaxTextFetch(modelName, tempFetch)
+    : isOfficialOpenAIHost(resolvedBaseURL)
+      ? tempFetch
+      : createMaxTokensFetch(providerName, tempFetch)
 
   if (providerName === 'gemini') {
     const googleProvider = createGoogleGenerativeAI({

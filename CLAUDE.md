@@ -42,8 +42,13 @@ configs/   — 遗留死配置，代码零引用
 - **HTTP**: Hono（入口 `src/index.ts`），路由挂 `/api/v1`，`/static` 服务 DATA_ROOT，生产托管前端静态目录
 - **Database**: SQLite（better-sqlite3 + WAL），`SQLITE_PATH` 覆盖库文件位置；DDL 在 `src/db/sqlite-schema.ts`，启动时幂等重放；Drizzle 表定义 `src/db/schema.ts`（sqlite-core）
 - **路径锚点**: `src/utils/paths.ts` 统一解析 DATA_ROOT/STORAGE_ROOT；桌面版由 Electron 主进程注入 env（`HUOBAO_DATA_DIR`/`SQLITE_PATH`/`WORKSPACE_PATH`/`FRONTEND_DIST`/`FFMPEG_BIN`/`FFPROBE_BIN`），dev 走仓库相对路径默认值
-- **AI Agents**: Mastra，4 个 agent（script_rewriter / extractor / storyboard_breaker / prompt_generator），instructions 从 `workspace/prompts/*.md` + skills 动态拼接，模型按请求解析；fetch 补丁链适配国内中转站（关思考/温度/max_tokens）
-- **媒体生成**: `services/generation.ts` 统一任务生命周期（sys_task 表），适配器模式：图片 openai/gemini/volcengine，视频 volcengine/minimax
+- **AI Agents**: Mastra，4 个 agent（script_rewriter / extractor / storyboard_breaker / prompt_generator），instructions 从 `workspace/prompts/*.md` + skills 动态拼接，模型按请求解析；fetch 补丁链适配国内中转站（关思考/温度/max_tokens）；MiniMax 走独立补丁（`max_completion_tokens`，不注入 `enable_thinking`）
+- **媒体生成**: `services/generation.ts` 统一任务生命周期（sys_task 表），适配器模式：图片 openai/gemini/volcengine/minimax，视频 volcengine/minimax/aliyun
+- **厂商错误**: MiniMax 把业务错误放在 `base_resp.status_code`（HTTP 200 也可能失败），统一由 `services/adapters/minimax-common.ts` 校验并翻译错误码
+- **MiniMax 模型档案**: `services/adapters/minimax-common.ts` 按模型给出分辨率/时长/参考素材能力（H3 家族、Hailuo 家族、image-01/-live），视频与图片适配器据此归一化参数，避免硬编码一套参数在其它模型上被上游 400
+- **MiniMax 订阅套餐**: `services/adapters/minimax-plan.ts` 处理 Token Plan / M Plan——区分订阅 Key（`sk-cp`）与按量 Key（`sk-api`）、查询 5 小时/周额度窗口、按 Key 类型归因 2056/2062/1008 等额度类错误
+- **失败详情**: 任务失败时 `sys_task.error_detail` 落库结构化详情（环节/HTTP 状态/厂商错误码/请求与响应摘要/排查建议），`ProviderError` 携带；`GET /tasks/:id/diagnostics` 返回，前端「查看失败详情」弹窗展示
+- **连通性测试**: `services/ai-connection-test.ts` 真实调用一次模型（文本/图片/视频），返回耗时、失败环节与可操作建议；`mode=light` 只探测端点可达性；`POST /ai-configs/plan-quota` 查询 MiniMax 订阅额度
 - **视频拼接**: `services/ffmpeg-merge.ts`，FFmpeg 二进制内置（ffmpeg-static），可用 `FFMPEG_BIN`/`FFPROBE_BIN` 覆盖
 
 ### Frontend

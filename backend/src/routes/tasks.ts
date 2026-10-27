@@ -20,11 +20,34 @@ app.post('/:id/recover', async c => {
 app.get('/:id/diagnostics', async c => {
   const [task] = await db.select().from(schema.sysTask).where(eq(schema.sysTask.id, Number(c.req.param('id'))))
   if (!task) return badRequest(c, '任务不存在')
-  return success(c, { id: task.id, upstreamTaskId: task.taskId, provider: task.provider, model: task.model,
-    status: task.status, stage: task.stage, errorCode: task.errorCode, error: safeTaskError(task.errorMsg),
-    hasResult: !!task.resultUrl, hasLocalFile: !!task.localPath, createdAt: task.createdAt, updatedAt: task.updatedAt,
-    version: process.env.HUOBAO_VERSION || 'development' })
+  return success(c, {
+    id: task.id,
+    upstreamTaskId: task.taskId,
+    provider: task.provider,
+    model: task.model,
+    status: task.status,
+    stage: task.stage,
+    errorCode: task.errorCode,
+    error: safeTaskError(task.errorMsg),
+    // 结构化失败详情：失败环节 / HTTP 状态 / 厂商错误码 / 请求与响应摘要 / 排查建议
+    errorDetail: parseErrorDetail(task.errorDetail),
+    hasResult: !!task.resultUrl,
+    hasLocalFile: !!task.localPath,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    version: process.env.HUOBAO_VERSION || 'development',
+  })
 })
+
+/** 解析 sys_task.error_detail（JSON），解析失败时原样返回文本 */
+function parseErrorDetail(raw: string | null | undefined): any {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return { message: raw, stage: 'unknown' }
+  }
+}
 
 type TaskType = 'image' | 'video'
 
@@ -196,6 +219,7 @@ app.post('/', async (c) => {
         size: body.size,
         referenceImages: body.reference_images,
         frameType: body.frame_type,
+        style: body.style,
         configId,
       })
       : await generateVideo({

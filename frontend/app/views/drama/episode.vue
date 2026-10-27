@@ -37,6 +37,12 @@
             :default-label="t('episode.model.defaultWith', { model: imageModelOptions[0].model })"
             :show-config="imageModelMultiCfg"
           />
+          <BaseSelect
+            v-if="imageStyleOptions.length"
+            v-model="imageStyle"
+            :label="t('episode.topbar.imageStyle')"
+            :options="imageStyleOptions"
+          />
           <ModelSelect
             v-if="videoModelOptions.length"
             v-model="videoModel"
@@ -1073,8 +1079,9 @@
                 </div>
                 <div v-if="row.errorMsg" class="video-task-error" :title="row.errorMsg">
                   {{ mapError(row.errorMsg) }}
-                  <div v-if="row.kind === 'video'" class="flex gap-2">
-                    <button v-if="row.recoverable" class="btn btn-sm" @click.stop="recoverTask(row.id, row.storyboardId)">{{ t('episode.recovery.restore') }}</button>
+                  <div class="flex gap-2">
+                    <button v-if="row.kind === 'video' && row.recoverable" class="btn btn-sm" @click.stop="recoverTask(row.id, row.storyboardId)">{{ t('episode.recovery.restore') }}</button>
+                    <button class="btn btn-sm" @click.stop="openFailureDetail(row)">{{ t('episode.recovery.failureDetail') }}</button>
                     <button class="btn btn-sm" @click.stop="copyTaskDiagnostics(row.id)">{{ t('episode.recovery.diagnostics') }}</button>
                   </div>
                   <div v-if="row.kind === 'video' && videoModerationHint(row.errorMsg)" class="video-task-error-hint">{{ videoModerationHint(row.errorMsg) }}</div>
@@ -1087,6 +1094,75 @@
             </div>
           </div>
         </aside>
+      </div>
+
+      <!-- 失败详情弹窗：展示结构化失败信息（环节 / 状态码 / 厂商错误码 / 请求与响应 / 建议） -->
+      <div v-if="failureDetail.open" class="overlay" @click.self="closeFailureDetail">
+        <section class="dialog failure-detail-dialog" role="dialog" aria-modal="true" :aria-label="t('episode.recovery.failureDetailTitle')">
+          <header class="dialog-head">
+            <div>
+              <div class="dialog-title">{{ t('episode.recovery.failureDetailTitle') }}</div>
+              <div class="dialog-sub">{{ failureDetail.row?.targetLabel }} · #{{ failureDetail.row?.id }}</div>
+            </div>
+            <span class="tag tag-error ml-auto">{{ failureDetail.row?.provider }}<template v-if="failureDetail.row?.model"> · {{ failureDetail.row.model }}</template></span>
+            <button class="btn btn-ghost btn-icon" @click="closeFailureDetail">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </header>
+          <div class="dialog-body failure-detail-body">
+            <template v-if="failureDetail.detail">
+              <div class="failure-detail-grid">
+                <div class="failure-detail-cell">
+                  <span class="failure-detail-label">{{ t('episode.recovery.failureStage') }}</span>
+                  <span class="failure-detail-value mono">{{ failureDetail.detail.stage || '—' }}</span>
+                </div>
+                <div class="failure-detail-cell">
+                  <span class="failure-detail-label">{{ t('episode.recovery.failureHttpStatus') }}</span>
+                  <span class="failure-detail-value mono">{{ failureDetail.detail.httpStatus ?? '—' }}</span>
+                </div>
+                <div class="failure-detail-cell">
+                  <span class="failure-detail-label">{{ t('episode.recovery.failureProviderCode') }}</span>
+                  <span class="failure-detail-value mono">{{ failureDetail.detail.providerCode ?? '—' }}</span>
+                </div>
+                <div class="failure-detail-cell">
+                  <span class="failure-detail-label">{{ t('episode.recovery.failureUpstreamTask') }}</span>
+                  <span class="failure-detail-value mono truncate">{{ failureDetail.detail.upstreamTaskId || '—' }}</span>
+                </div>
+                <div v-if="failureDetail.detail.at" class="failure-detail-cell">
+                  <span class="failure-detail-label">{{ t('episode.recovery.failureTime') }}</span>
+                  <span class="failure-detail-value mono">{{ failureDetail.detail.at }}</span>
+                </div>
+              </div>
+
+              <div class="failure-detail-block">
+                <div class="failure-detail-label">{{ t('episode.recovery.failureProviderMessage') }}</div>
+                <pre class="failure-detail-pre">{{ failureDetail.detail.providerMessage || failureDetail.detail.message || '—' }}</pre>
+              </div>
+
+              <div v-if="failureDetail.detail.hint" class="failure-detail-hint">{{ failureDetail.detail.hint }}</div>
+
+              <div v-if="failureDetail.detail.requestUrl" class="failure-detail-block">
+                <div class="failure-detail-label">{{ t('episode.recovery.failureRequestUrl') }}</div>
+                <pre class="failure-detail-pre mono">{{ failureDetail.detail.requestUrl }}</pre>
+              </div>
+
+              <div v-if="failureDetail.detail.requestBody" class="failure-detail-block">
+                <div class="failure-detail-label">{{ t('episode.recovery.failureRequestBody') }}</div>
+                <pre class="failure-detail-pre mono">{{ failureDetailPretty(failureDetail.detail.requestBody) }}</pre>
+              </div>
+
+              <div v-if="failureDetail.detail.responseBody" class="failure-detail-block">
+                <div class="failure-detail-label">{{ t('episode.recovery.failureResponseBody') }}</div>
+                <pre class="failure-detail-pre mono">{{ failureDetailPretty(failureDetail.detail.responseBody) }}</pre>
+              </div>
+            </template>
+            <p v-else class="config-empty">{{ t('episode.recovery.noFailureDetail') }}</p>
+          </div>
+          <footer class="dialog-foot">
+            <button type="button" class="btn btn-ghost" @click="copyFailureDetail">{{ t('episode.recovery.copyFailureDetail') }}</button>
+            <button type="button" class="btn" @click="closeFailureDetail">{{ t('common.close') }}</button>
+          </footer>
+        </section>
       </div>
 
       <div v-if="assetDetail.open && assetDetail.item" class="overlay asset-detail-overlay" @click.self="closeAssetDetail">
@@ -1457,6 +1533,7 @@ import { useAgent } from '~/composables/useAgent'
 import { resolveTextModelSelection } from '~/utils/text-model-selection'
 import { toastError, mapError, MODERATION_RE } from '~/composables/useToast'
 import LocaleSwitcher from '~/components/LocaleSwitcher.vue'
+import BaseSelect from '~/components/BaseSelect.vue'
 
 definePageMeta({ layout: 'studio' })
 
@@ -1580,13 +1657,15 @@ const imageConfigs = ref([])
 const videoConfigs = ref([])
 const textConfigs = ref([])
 // 生成时可选模型：空串 = 跟随配置默认（models[0]）；选择持久化到 localStorage，刷新页面后保留
-const MODEL_STORE_KEYS = { chat: 'huobao:model:chat', image: 'huobao:model:image', video: 'huobao:model:video' }
+const MODEL_STORE_KEYS = { chat: 'huobao:model:chat', image: 'huobao:model:image', video: 'huobao:model:video', imageStyle: 'huobao:model:image-style' }
 function readStoredModel(key, legacyKey = '') {
   try { return localStorage.getItem(key) || (legacyKey && localStorage.getItem(legacyKey)) || '' } catch { return '' }
 }
 // 顶栏文本模型：适用于所有 Chat Agent 调用（改写/提取/拆镜/视频提示词/最终提示词），空串 = 跟随配置默认
 const chatModel = ref(readStoredModel(MODEL_STORE_KEYS.chat, 'huobao:model:rewrite'))
 const imageModel = ref(readStoredModel(MODEL_STORE_KEYS.image))
+// MiniMax image-01-live 画风（style.style_type）；空串 = 不指定画风
+const imageStyle = ref(readStoredModel(MODEL_STORE_KEYS.imageStyle))
 const videoModel = ref(readStoredModel(MODEL_STORE_KEYS.video))
 function persistModel(modelRef, key) {
   watch(modelRef, v => {
@@ -1595,6 +1674,7 @@ function persistModel(modelRef, key) {
 }
 persistModel(chatModel, MODEL_STORE_KEYS.chat)
 persistModel(imageModel, MODEL_STORE_KEYS.image)
+persistModel(imageStyle, MODEL_STORE_KEYS.imageStyle)
 persistModel(videoModel, MODEL_STORE_KEYS.video)
 // 左侧菜单栏收起/展开：收起为窄图标栏给内容区让位，持久化到 localStorage
 const SIDEBAR_COLLAPSED_KEY = 'huobao:sidebar-collapsed'
@@ -2007,6 +2087,46 @@ async function copyTaskDiagnostics(taskId) {
     toast.success(t('episode.recovery.copied'))
   } catch (error) { toastError(error) }
 }
+
+// ─── 失败详情弹窗 ────────────────────────────────────────────────
+const failureDetail = reactive({ open: false, row: null, detail: null })
+
+function openFailureDetail(row) {
+  failureDetail.row = row
+  failureDetail.detail = row?.errorDetail || null
+  failureDetail.open = true
+}
+function closeFailureDetail() {
+  failureDetail.open = false
+}
+function failureDetailPretty(value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+async function copyFailureDetail() {
+  const payload = {
+    task: failureDetail.row
+      ? {
+          id: failureDetail.row.id,
+          kind: failureDetail.row.kind,
+          provider: failureDetail.row.provider,
+          model: failureDetail.row.model,
+          status: failureDetail.row.status,
+          error: failureDetail.row.errorMsg,
+        }
+      : null,
+    detail: failureDetail.detail,
+  }
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2))
+    toast.success(t('episode.recovery.failureDetailCopied'))
+  } catch (error) { toastError(error) }
+}
 async function recoverVideo(sb) {
   const task = latestVideoTask(sb.id)
   if (!task) return
@@ -2195,6 +2315,21 @@ const selectedVideoConfig = computed(() => {
 const isWan3Video = computed(() => selectedVideoConfig.value?.provider === 'aliyun'
   || bareModelName(videoModel.value).startsWith('wan3.0-video'))
 
+// MiniMax image-01-live 的画风选项：只在选中该模型时提供，其余模型隐藏
+const MINIMAX_IMAGE_STYLES = ['漫画', '元气', '中世纪', '水彩']
+const imageStyleOptions = computed(() => {
+  const m = bareModelName(imageModel.value).toLowerCase()
+  if (!m.startsWith('image-01-live')) return []
+  return [
+    { label: t('episode.topbar.imageStyleNone'), value: '' },
+    ...MINIMAX_IMAGE_STYLES.map(s => ({ label: s, value: s })),
+  ]
+})
+// 画风只对 image-01-live 生效：切模型后清掉，避免把画风带给不支持的模型
+watch(imageModel, () => {
+  if (!imageStyleOptions.value.length && imageStyle.value) imageStyle.value = ''
+})
+
 // 参考图上限（Wan 3.0 官方 10 张，其他模型 9 张），绑定素材收集与 @名字 映射统一读取
 const refImageLimit = computed(() => isWan3Video.value ? 10 : 9)
 
@@ -2352,6 +2487,7 @@ const genTaskRows = computed(() => {
     model: t.model || '',
     status: t.status || 'processing',
     errorMsg: t.error_msg || '',
+    errorDetail: parseTaskErrorDetail(t.error_detail),
     storyboardId: t.storyboard_id,
     recoverable: t.type === 'video' && t.error_code !== 'generation_failed' && !!(t.task_id || t.result_url),
     previewUrl: t.local_path || t.result_url || '',
@@ -2378,6 +2514,17 @@ const genTaskRows = computed(() => {
 
 function genTaskKindLabel(kind) {
   return kind === 'image' ? t('common.serviceType.image') : kind === 'video' ? t('common.serviceType.video') : t('episode.tasks.mergeKind')
+}
+
+// sys_task.error_detail 是结构化失败详情的 JSON 字符串
+function parseTaskErrorDetail(raw) {
+  if (!raw) return null
+  if (typeof raw === 'object') return raw
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return { message: String(raw) }
+  }
 }
 
 function genTaskStatusLabel(status) {
@@ -2947,7 +3094,7 @@ async function genCharImg(id) {
         await ensureAssetPrompt('character', id)
       } catch {} // 提示词生成失败不阻断：后端生图前会再兜底生成或回退本地拼接
     }
-    await characterAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId())
+    await characterAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined)
     toast.success(t('episode.image.generatingChar'))
     await refresh()
     watchAsyncResult(() => {
@@ -2965,7 +3112,7 @@ function batchCharImages() {
   const ids = visualChars.value.filter(c => !(c.image_url || c.imageUrl)).map(c => c.id)
   if (!ids.length) { toast.info(t('episode.image.allCharsDone')); return }
   pendingCharImageIds.value = [...new Set([...pendingCharImageIds.value, ...ids])]
-  characterAPI.batchImages(ids, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId()).then(async () => {
+  characterAPI.batchImages(ids, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined).then(async () => {
     toast.success(t('episode.image.batchGeneratingChar'))
     await refresh()
     watchAsyncResult(() => ids.every(id => {
@@ -2989,7 +3136,7 @@ async function genSceneImg(id) {
         await ensureAssetPrompt('scene', id)
       } catch {} // 提示词生成失败不阻断：后端生图前会再兜底生成或回退本地拼接
     }
-    await sceneAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId())
+    await sceneAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined)
     toast.success(t('episode.image.generatingScene'))
     await refresh()
     watchAsyncResult(() => {
@@ -3016,7 +3163,7 @@ async function genPropImg(id) {
         await ensureAssetPrompt('prop', id)
       } catch {} // 提示词生成失败不阻断：后端生图前会再兜底生成或回退本地拼接
     }
-    await propAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId())
+    await propAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined)
     toast.success(t('episode.image.generatingProp'))
     await refresh()
     watchAsyncResult(() => {
@@ -3034,7 +3181,7 @@ function batchSceneImages() {
   const ids = scenes.value.filter(s => !(s.image_url || s.imageUrl)).map(s => s.id)
   if (!ids.length) { toast.info(t('episode.image.allScenesDone')); return }
   pendingSceneImageIds.value = [...new Set([...pendingSceneImageIds.value, ...ids])]
-  ids.forEach(id => { sceneAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId()).then(() => refresh()).catch(e => toastError(e)) })
+  ids.forEach(id => { sceneAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined).then(() => refresh()).catch(e => toastError(e)) })
   toast.success(t('episode.image.batchGeneratingScene'))
   watchAsyncResult(() => ids.every(id => {
     const scene = scenes.value.find(s => s.id === id)
@@ -3047,7 +3194,7 @@ function batchPropImages() {
   const ids = propItems.value.filter(p => !(p.image_url || p.imageUrl)).map(p => p.id)
   if (!ids.length) { toast.info(t('episode.image.allPropsDone')); return }
   pendingPropImageIds.value = [...new Set([...pendingPropImageIds.value, ...ids])]
-  ids.forEach(id => { propAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId()).then(() => refresh()).catch(e => toastError(e)) })
+  ids.forEach(id => { propAPI.generateImage(id, epId.value, bareModelName(imageModel.value) || undefined, ownerConfigId(imageModelOptions.value, imageModel.value), chatModelOverride(), chatConfigId(), imageStyle.value || undefined).then(() => refresh()).catch(e => toastError(e)) })
   toast.success(t('episode.image.batchGeneratingProp'))
   watchAsyncResult(() => ids.every(id => {
     const prop = propItems.value.find(p => p.id === id)
@@ -5158,6 +5305,69 @@ button.video-task-metric.on { box-shadow: 0 0 0 2px var(--accent); }
   margin-top: 3px;
   color: var(--accent-text, var(--accent));
   font-weight: 600;
+}
+
+/* ─── 失败详情弹窗 ─────────────────────────────────────────── */
+.failure-detail-dialog {
+  width: min(680px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+}
+.failure-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.failure-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+.failure-detail-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+  min-width: 0;
+}
+.failure-detail-label {
+  font-size: 10px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.failure-detail-value {
+  font-size: 12px;
+  color: var(--text-1);
+  word-break: break-all;
+}
+.failure-detail-block { display: flex; flex-direction: column; gap: 5px; }
+.failure-detail-pre {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.failure-detail-hint {
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--accent-bg, rgba(56, 132, 255, 0.1));
+  color: var(--accent-text, var(--accent));
+  font-size: 12px;
+  line-height: 1.55;
 }
 .video-task-status {
   justify-self: end;

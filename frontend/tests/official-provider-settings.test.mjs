@@ -74,18 +74,31 @@ test('settings page offers official default model IDs', () => {
 })
 
 test('only text service configs expose the connection test button', () => {
-  assert.match(settingsPage, /v-if="st\.type === 'text'" class="btn btn-ghost btn-sm" @click="testExistingCfg\(c\)">\{\{ t\('settings\.ai\.test'\) \}\}/)
+  assert.match(settingsPage, /@click="testExistingCfg\(c\)"/)
+  assert.match(settingsPage, /:title="st\.type === 'text' \? t\('settings\.cfg\.testRealHint'\) : t\('settings\.cfg\.testQuotaHint'\)"/)
 })
 
 test('settings page offers the supported official provider presets', () => {
   assert.match(providerPresetBlock('text'), /deepseek-v4-pro/)
-  assert.doesNotMatch(providerPresetBlock('text'), /minimax/i)
-  assert.doesNotMatch(providerPresetBlock('image'), /'ali'|minimax/i)
+  assert.match(providerPresetBlock('text'), /minimax/i)
+  assert.match(providerPresetBlock('image'), /minimax/i)
+  assert.doesNotMatch(providerPresetBlock('image'), /'ali'/i)
   assert.match(providerPresetBlock('video'), /volcengine/)
   assert.match(providerPresetBlock('video'), /minimax/)
   assert.match(providerPresetBlock('video'), /aliyun/)
   assert.doesNotMatch(providerPresetBlock('video'), /'vidu'/i)
   assert.doesNotMatch(settingsPage, /audio:\s*\{/)
+})
+
+test('MiniMax presets cover text, image and video with official model ids', () => {
+  assert.match(settingsPage, /const MINIMAX_CN_BASE = 'https:\/\/api\.minimaxi\.com'/)
+  assert.match(providerPresetBlock('text'), /MiniMax-M2\.7/)
+  assert.match(providerPresetBlock('text'), /MiniMax-M3/)
+  assert.match(providerPresetBlock('image'), /image-01/)
+  assert.match(providerPresetBlock('video'), /MiniMax-H3/)
+  assert.match(providerPresetBlock('video'), /MiniMax-Hailuo-2\.3/)
+  // 国际站域名由用户自行替换，设置页不得硬编码
+  assert.doesNotMatch(settingsPage, /https:\/\/api\.minimax\.io/)
 })
 
 test('Huobao quick config includes Wan 3.0 through the Qwen gateway route', () => {

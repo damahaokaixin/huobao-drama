@@ -177,7 +177,11 @@
                   </div>
                   <div class="config-sub mono truncate">{{ c.base_url || t('settings.ai.noBaseUrl') }}</div>
                 </div>
-                <button v-if="st.type === 'text'" class="btn btn-ghost btn-sm" @click="testExistingCfg(c)">{{ t('settings.ai.test') }}</button>
+                <button
+                  class="btn btn-ghost btn-sm"
+                  :title="st.type === 'text' ? t('settings.cfg.testRealHint') : t('settings.cfg.testQuotaHint')"
+                  @click="testExistingCfg(c)"
+                >{{ t('settings.ai.test') }}</button>
                 <label class="config-switch">
                   <input type="checkbox" class="sr-only" :checked="c.is_active" @change="toggleCfg(c)">
                   <span class="switch" :class="{ on: c.is_active }"></span>
@@ -517,7 +521,10 @@
             <input v-model.number="cfgForm.priority" class="input" type="number" min="0" max="999" />
             <span class="field-hint">{{ t('settings.cfg.priorityHint') }}</span>
           </label>
-          <label class="field"><span class="field-label">API Key</span><input v-model="cfgForm.api_key" class="input" type="password" placeholder="sk-..." /></label>
+          <label class="field">
+            <span class="field-label">API Key</span><input v-model="cfgForm.api_key" class="input" type="password" placeholder="sk-..." />
+            <span v-if="minimaxKeyHint" class="field-hint" :class="{ 'hint-warn': minimaxKeyType === 'payg' }">{{ minimaxKeyHint }}</span>
+          </label>
           <label class="field"><span class="field-label">Base URL</span><input v-model="cfgForm.base_url" class="input" placeholder="https://..." /></label>
           <div class="field">
             <span class="field-label">{{ t('settings.cfg.models') }}</span>
@@ -547,19 +554,70 @@
             <input v-model="cfgForm.temperature" class="input" type="number" step="0.1" min="0" max="2" :placeholder="t('settings.cfg.tempPlaceholder')" />
             <span class="field-hint">{{ t('settings.cfg.tempNote') }}</span>
           </label>
-          <div v-if="cfgTestResult" class="test-result" :class="{ ok: cfgTestResult.reachable, bad: !cfgTestResult.reachable }">
+          <div v-if="cfgTestResult" class="test-result" :class="{ ok: cfgTestResult.ok, bad: !cfgTestResult.ok }">
             <div class="test-result-head">
-              <span class="tag" :class="cfgTestResult.reachable ? 'tag-success' : 'tag-error'">{{ cfgTestResult.status || 'ERROR' }}</span>
+              <span class="tag" :class="cfgTestResult.ok ? 'tag-success' : 'tag-error'">
+                {{ cfgTestResult.ok ? t('settings.cfg.testOk') : (cfgTestResult.status ? `HTTP ${cfgTestResult.status}` : 'ERROR') }}
+              </span>
               <span>{{ cfgTestResult.message }}</span>
             </div>
+            <div class="test-result-meta">
+              <span v-if="cfgTestResult.stage" class="tag">{{ t('settings.cfg.stage') }}: {{ cfgTestResult.stage }}</span>
+              <span v-if="cfgTestResult.latency_ms != null" class="tag">{{ cfgTestResult.latency_ms }} ms</span>
+              <span v-if="cfgTestResult.provider_code" class="tag tag-error">{{ t('settings.cfg.providerCode') }}: {{ cfgTestResult.provider_code }}</span>
+              <span v-if="cfgTestResult.key_type" class="tag" :class="cfgTestResult.key_type === 'subscription' ? 'tag-accent' : ''">{{ t('settings.cfg.keyType') }}: {{ keyTypeLabel(cfgTestResult.key_type) }}</span>
+            </div>
+            <div v-if="cfgTestResult.suggestion" class="test-result-suggestion">{{ cfgTestResult.suggestion }}</div>
             <div class="mono test-result-url">{{ cfgTestResult.method }} {{ cfgTestResult.url }}</div>
+            <div v-if="cfgTestResult.detail && cfgTestResult.detail.reply" class="mono test-result-preview">{{ cfgTestResult.detail.reply }}</div>
+            <div v-else-if="cfgTestResult.detail && cfgTestResult.detail.task_id" class="mono test-result-preview">task_id: {{ cfgTestResult.detail.task_id }}<span v-if="cfgTestResult.detail.task_status"> · {{ cfgTestResult.detail.task_status }}</span></div>
+            <div v-else-if="cfgTestResult.detail && cfgTestResult.detail.image_url" class="mono test-result-preview">{{ cfgTestResult.detail.image_url }}</div>
             <div v-if="cfgTestResult.response_preview" class="mono test-result-preview">{{ cfgTestResult.response_preview }}</div>
+          </div>
+          <p v-if="cfgTestQuotaHint" class="field-hint">{{ cfgTestQuotaHint }}</p>
+          <!-- MiniMax 订阅套餐（Token Plan / M Plan）额度 -->
+          <div v-if="cfgForm.provider === 'minimax'" class="plan-quota-box">
+            <div class="plan-quota-head">
+              <span class="field-label">{{ t('settings.cfg.planQuotaTitle') }}</span>
+              <button type="button" class="btn btn-ghost btn-sm" :disabled="cfgQuotaLoading" @click="queryPlanQuota">
+                <Loader2 v-if="cfgQuotaLoading" :size="12" class="animate-spin" />
+                <span v-else>{{ t('settings.cfg.planQuotaQuery') }}</span>
+              </button>
+            </div>
+            <p class="field-hint">{{ t('settings.cfg.planQuotaHint') }}</p>
+            <div v-if="cfgPlanQuota" class="plan-quota-result" :class="{ ok: cfgPlanQuota.ok, bad: !cfgPlanQuota.ok }">
+              <div v-if="cfgPlanQuota.ok" class="plan-quota-windows">
+                <div v-for="w in planQuotaWindows" :key="w.key" class="plan-quota-window">
+                  <div class="plan-quota-window-label">{{ w.label }}</div>
+                  <div class="plan-quota-window-value">
+                    {{ w.remaining }} / {{ w.total }}<span v-if="w.percent != null"> · {{ w.percent }}%</span>
+                  </div>
+                  <div v-if="w.resetTime" class="plan-quota-window-reset">{{ t('settings.cfg.planQuotaReset') }}: {{ w.resetTime }}</div>
+                </div>
+              </div>
+              <div v-else class="plan-quota-error">
+                <span class="tag tag-error">{{ t('settings.cfg.planQuotaFailed') }}</span>
+                <span>{{ cfgPlanQuota.message }}</span>
+              </div>
+              <div v-if="cfgPlanQuota.suggestion" class="test-result-suggestion">{{ cfgPlanQuota.suggestion }}</div>
+              <div v-if="cfgPlanQuota.models && cfgPlanQuota.models.length" class="plan-quota-models">
+                <div v-for="m in cfgPlanQuota.models" :key="m.model" class="plan-quota-model">
+                  <span class="mono">{{ m.model }}</span>
+                  <span v-if="m.percentRemaining != null">{{ m.percentRemaining }}%</span>
+                  <span v-else-if="m.remaining != null">{{ m.remaining }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="dialog-foot">
-          <button type="button" class="btn btn-ghost test-draft-btn" :disabled="cfgTesting" @click="testDraftCfg">
+          <button type="button" class="btn btn-ghost test-draft-btn" :disabled="cfgTesting" @click="testDraftCfg('light')">
             <Loader2 v-if="cfgTesting" :size="12" class="animate-spin" />
-            <span v-else>{{ t('settings.cfg.test') }}</span>
+            <span v-else>{{ t('settings.cfg.testLight') }}</span>
+          </button>
+          <button type="button" class="btn btn-primary test-draft-btn" :disabled="cfgTesting" @click="testDraftCfg('real')">
+            <Loader2 v-if="cfgTesting" :size="12" class="animate-spin" />
+            <span v-else>{{ t('settings.cfg.testReal') }}</span>
           </button>
           <button type="button" class="btn" @click="cfgDialog = false">{{ t('common.cancel') }}</button>
           <button type="submit" class="btn btn-primary">{{ t('common.save') }}</button>
@@ -722,6 +780,83 @@ const huobaoSaving = ref(false)
 const huobaoRegion = ref(locale.value?.startsWith('zh') ? 'cn' : 'com')
 const huobaoSiteUrl = computed(() => `https://api.firemux.${huobaoRegion.value}`)
 const cfgForm = reactive({ name: '', provider: '', api_key: '', base_url: '', models: [], service_type: 'text', priority: 0, temperature: '' })
+// 真实测试会真的调用一次模型：图片会出一张图、视频会提交一单，都可能产生少量计费
+const cfgTestQuotaHint = computed(() => {
+  if (cfgForm.service_type === 'image') return t('settings.cfg.testQuotaImage')
+  if (cfgForm.service_type === 'video') return t('settings.cfg.testQuotaVideo')
+  return ''
+})
+
+// ===== MiniMax 订阅套餐（Token Plan / M Plan）=====
+// MiniMax 有两种互斥凭证：sk-cp 开头的订阅 Key（走套餐额度）与 sk-api 开头的按量 Key（扣账户余额）。
+// 这里实时识别当前填的是哪一种，并在测试失败时给出对应建议。
+const cfgQuotaLoading = ref(false)
+const cfgPlanQuota = ref(null)
+const minimaxKeyType = computed(() => {
+  if (cfgForm.provider !== 'minimax') return 'unknown'
+  const key = (cfgForm.api_key || '').trim()
+  if (!key) return 'unknown'
+  if (/^sk-cp/i.test(key)) return 'subscription'
+  if (/^sk-api/i.test(key)) return 'payg'
+  return 'unknown'
+})
+function keyTypeLabel(type) {
+  if (type === 'subscription') return t('settings.cfg.keyTypeSubscription')
+  if (type === 'payg') return t('settings.cfg.keyTypePayg')
+  return t('settings.cfg.keyTypeUnknown')
+}
+const minimaxKeyHint = computed(() => {
+  if (cfgForm.provider !== 'minimax') return ''
+  if (minimaxKeyType.value === 'subscription') return t('settings.cfg.keyHintSubscription')
+  if (minimaxKeyType.value === 'payg') return t('settings.cfg.keyHintPayg')
+  return ''
+})
+// 额度窗口（5 小时 / 周）展示用
+const planQuotaWindows = computed(() => {
+  const q = cfgPlanQuota.value
+  if (!q?.ok) return []
+  const out = []
+  if (q.interval) {
+    out.push({
+      key: 'interval',
+      label: t('settings.cfg.planWindow5h'),
+      remaining: q.interval.remaining,
+      total: q.interval.total,
+      percent: q.interval.percentRemaining,
+      resetTime: q.interval.resetTime,
+    })
+  }
+  if (q.weekly) {
+    out.push({
+      key: 'weekly',
+      label: t('settings.cfg.planWindowWeekly'),
+      remaining: q.weekly.remaining,
+      total: q.weekly.total,
+      percent: q.weekly.percentRemaining,
+      resetTime: q.weekly.resetTime,
+    })
+  }
+  return out
+})
+async function queryPlanQuota() {
+  if (cfgForm.provider !== 'minimax') return
+  if (!cfgForm.base_url?.trim() || !cfgForm.api_key?.trim()) {
+    toast.warning(t('settings.cfg.planQuotaNeedKey'))
+    return
+  }
+  cfgQuotaLoading.value = true
+  try {
+    cfgPlanQuota.value = await aiConfigAPI.planQuota({
+      provider: 'minimax',
+      base_url: cfgForm.base_url.trim(),
+      api_key: cfgForm.api_key.trim(),
+    })
+  } catch (e) {
+    cfgPlanQuota.value = { ok: false, message: e?.message || String(e), models: [] }
+  } finally {
+    cfgQuotaLoading.value = false
+  }
+}
 // 模型标签编辑器：首位即默认模型；输入框支持回车添加、逗号/换行批量粘贴
 const modelInput = ref('')
 function addModel() {
@@ -756,19 +891,36 @@ const serviceMeta = computed(() => ({
   image: { label: t('common.serviceType.image'), desc: t('settings.ai.meta.image') },
   video: { label: t('common.serviceType.video'), desc: t('settings.ai.meta.video') },
 }))
+// MiniMax 国内站为 api.minimaxi.com；国际站把域名换成 api.minimax.io 即可，其余配置不变
+const MINIMAX_CN_BASE = 'https://api.minimaxi.com'
 const providerPresets = {
   text: {
     gemini: { label: 'Gemini 官方', baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-3.8-flash', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview'] },
     openai: { label: 'OpenAI 官方', baseUrl: 'https://api.openai.com', models: ['deepseek-v4-pro', 'gpt-5.6-terra'] },
+    minimax: { label: 'MiniMax 官方', baseUrl: MINIMAX_CN_BASE, models: ['MiniMax-M3', 'MiniMax-M3.1-Flash', 'MiniMax-M2.7', 'MiniMax-M2.5'] },
   },
   image: {
     gemini: { label: 'Gemini 官方', baseUrl: 'https://generativelanguage.googleapis.com', models: ['gemini-3-pro-image', 'gemini-3.1-flash-image'] },
     openai: { label: 'OpenAI 官方', baseUrl: 'https://api.openai.com', models: ['gpt-image-2'] },
+    minimax: { label: 'MiniMax 官方', baseUrl: MINIMAX_CN_BASE, models: ['image-01', 'image-01-live'] },
   },
   video: {
     aliyun: { label: '阿里云百炼 Wan 3.0', baseUrl: 'https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com', models: ['wan3.0-video', 'wan3.0-video-prime'] },
     volcengine: { label: 'Seedance 2.0 官方', baseUrl: 'https://ark.cn-beijing.volces.com', models: ['doubao-seedance-2-0-mini-260615', 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-260128'] },
-    minimax: { label: 'MiniMax H3 官方', baseUrl: 'https://api.minimaxi.com', models: ['MiniMax-H3'] },
+    minimax: {
+      label: 'MiniMax 官方',
+      baseUrl: MINIMAX_CN_BASE,
+      models: [
+        'MiniMax-H3',
+        'MiniMax-H3-Highspeed',
+        'MiniMax-H3-Lite',
+        'MiniMax-H3-Max',
+        'MiniMax-Hailuo-2.3',
+        'MiniMax-Hailuo-2.3-Fast',
+        'MiniMax-Hailuo-02',
+        'T2V-01-Director',
+      ],
+    },
   },
 }
 const huobaoQuickConfigs = computed(() => {
@@ -794,6 +946,7 @@ function presetsByType(type) {
 function applyProviderPreset(type, provider) {
   const preset = providerPresets[type]?.[provider]
   if (!preset) return
+  cfgPlanQuota.value = null
   cfgForm.provider = provider
   cfgForm.base_url = preset.baseUrl
   cfgForm.models = [...preset.models]
@@ -868,6 +1021,7 @@ function startAddCfg(t) {
 function startEditCfg(c) {
   cfgEditId.value = c.id
   cfgTestResult.value = null
+  cfgPlanQuota.value = null
   Object.assign(cfgForm, {
     name: c.name || '',
     provider: c.provider,
@@ -880,28 +1034,31 @@ function startEditCfg(c) {
   })
   cfgDialog.value = true
 }
-async function testCfgPayload(payload) {
+async function testCfgPayload(payload, mode = 'real') {
   cfgTesting.value = true
+  cfgTestResult.value = null
   try {
-    cfgTestResult.value = await aiConfigAPI.test(payload)
-    if (cfgTestResult.value.reachable) toast.success(t('settings.cfg.reachable'))
-    else toast.warning(t('settings.cfg.unreachable'))
+    cfgTestResult.value = await aiConfigAPI.test({ ...payload, mode })
+    if (cfgTestResult.value?.ok) toast.success(t('settings.cfg.testOk'))
+    else toast.warning(cfgTestResult.value?.message || t('settings.cfg.testFailed'))
   } catch (e) {
     toastError(e)
   } finally {
     cfgTesting.value = false
   }
 }
-async function testDraftCfg() {
+async function testDraftCfg(mode = 'real') {
+  if (!cfgForm.provider) { toast.warning(t('settings.cfg.providerRequired')); return }
+  if (!cfgForm.base_url) { toast.warning(t('settings.cfg.baseUrlRequired')); return }
   await testCfgPayload({
     service_type: cfgForm.service_type,
     provider: cfgForm.provider,
     api_key: cfgForm.api_key,
     base_url: cfgForm.base_url,
     model: [...cfgForm.models],
-  })
+  }, mode)
 }
-async function testExistingCfg(c) {
+async function testExistingCfg(c, mode = 'real') {
   startEditCfg(c)
   await testCfgPayload({
     service_type: c.service_type,
@@ -909,7 +1066,7 @@ async function testExistingCfg(c) {
     api_key: c.api_key || '',
     base_url: c.base_url || '',
     model: Array.isArray(c.model) ? c.model : [],
-  })
+  }, mode)
 }
 async function saveCfg() {
   if (!cfgForm.provider) { toast.warning(t('settings.cfg.providerRequired')); return }
@@ -1810,6 +1967,89 @@ onBeforeUnmount(stopUsagePoll)
   font-size: 11px;
   color: var(--text-2);
   word-break: break-all;
+}
+.test-result-suggestion {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-1);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-1);
+}
+.hint-warn { color: var(--warning, var(--text-3)); }
+
+/* MiniMax 订阅套餐额度 */
+.plan-quota-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-0);
+}
+.plan-quota-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.plan-quota-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+}
+.plan-quota-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plan-quota-window {
+  flex: 1 1 160px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+}
+.plan-quota-window-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.plan-quota-window-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+  margin-top: 2px;
+}
+.plan-quota-window-reset {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.plan-quota-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-1);
+}
+.plan-quota-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plan-quota-model {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  color: var(--text-2);
 }
 
 /* 存储位置 */

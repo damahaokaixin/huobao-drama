@@ -405,7 +405,32 @@
       "reachable": "Endpoint responded",
       "unreachable": "Endpoint failed the test",
       "providerRequired": "Select a provider",
-      "tempInvalid": "Temperature must be a number between 0 and 2"
+      "tempInvalid": "Temperature must be a number between 0 and 2",
+      "testReal": "Real Test",
+      "testLight": "Light Probe",
+      "testOk": "Test Passed",
+      "testFailed": "Test Failed",
+      "testRealHint": "Actually calls the model once to confirm the config really works (text uses very few tokens)",
+      "testQuotaHint": "The real test generates actual content and may cost a little quota. Use \"Light Probe\" to only check the URL and the API key.",
+      "testQuotaImage": "The real test generates 1 image and may cost a little quota.",
+      "testQuotaVideo": "The real test submits 1 video task and polls briefly; it may cost a little quota.",
+      "stage": "Stage",
+      "providerCode": "Provider code",
+      "baseUrlRequired": "Base URL is required",
+      "keyType": "Key type",
+      "keyTypeSubscription": "Subscription key (plan)",
+      "keyTypePayg": "Pay-as-you-go",
+      "keyTypeUnknown": "Unknown",
+      "keyHintSubscription": "Subscription key detected (sk-cp): calls consume Token Plan / M Plan quota, not account balance. Text / image / speech are limited by both the 5-hour and weekly windows; video is limited by the weekly window only.",
+      "keyHintPayg": "Pay-as-you-go key detected (sk-api): calls consume account balance and never touch plan quota. The H3 v2 API requires pay-as-you-go (or an M Plan Explore / Build tier that includes video).",
+      "planQuotaTitle": "Subscription plan quota",
+      "planQuotaQuery": "Query quota",
+      "planQuotaHint": "Only subscription keys (sk-cp) can be queried. Quota settles against the 5-hour and weekly windows separately; the two refresh independently.",
+      "planQuotaFailed": "Query failed",
+      "planQuotaReset": "Resets at",
+      "planWindow5h": "5-hour window",
+      "planWindowWeekly": "Weekly window",
+      "planQuotaNeedKey": "Fill in the Base URL and API Key first"
     },
     "styleDialog": {
       "editTitle": "Edit Style Preset",
@@ -455,7 +480,9 @@
       "viewFilm": "View Film",
       "continue": "Continue",
       "start": "Start Production",
-      "resolution": "Resolution"
+      "resolution": "Resolution",
+      "imageStyle": "Style",
+      "imageStyleNone": "Default (none)"
     },
     "model": {
       "defaultWith": "Default · {model}",
@@ -876,7 +903,22 @@
       "restoreFailed": "Recover videos ({n})",
       "transferring": "Video generated; transferring",
       "awaitingDelivery": "Video generated; awaiting delivery",
-      "restoreHint": "Recover the existing task instead of generating again"
+      "restoreHint": "Recover the existing task instead of generating again",
+      "failureDetail": "View failure details",
+      "failureDetailTitle": "Failure details",
+      "failureStage": "Failed stage",
+      "failureHttpStatus": "HTTP status",
+      "failureProviderCode": "Provider error code",
+      "failureProviderMessage": "Provider message",
+      "failureRequestUrl": "Request URL",
+      "failureRequestBody": "Request payload",
+      "failureResponseBody": "Response body",
+      "failureHint": "Suggested fix",
+      "failureUpstreamTask": "Upstream task id",
+      "failureTime": "Occurred at",
+      "noFailureDetail": "No structured failure detail was recorded for this task",
+      "copyFailureDetail": "Copy details",
+      "failureDetailCopied": "Failure details copied"
     }
   },
   "errors": {

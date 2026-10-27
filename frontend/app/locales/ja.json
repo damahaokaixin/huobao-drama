@@ -405,7 +405,32 @@
       "reachable": "エンドポイントが応答しました",
       "unreachable": "エンドポイントのテストに失敗しました",
       "providerRequired": "プロバイダーを選択してください",
-      "tempInvalid": "Temperature は 0〜2 の数値で入力してください"
+      "tempInvalid": "Temperature は 0〜2 の数値で入力してください",
+      "testReal": "実テスト",
+      "testLight": "簡易チェック",
+      "testOk": "テスト成功",
+      "testFailed": "テスト失敗",
+      "testRealHint": "モデルを実際に1回呼び出し、設定が本当に使えるか確認します（テキストはトークン消費が極小です）",
+      "testQuotaHint": "実テストは実際に生成するため少量課金される場合があります。URL と認証だけ確認したい場合は「簡易チェック」を使ってください。",
+      "testQuotaImage": "実テストは画像を1枚実際に生成するため少量課金される場合があります。",
+      "testQuotaVideo": "実テストは動画タスクを1件実際に送信して短時間ポーリングするため少量課金される場合があります。",
+      "stage": "段階",
+      "providerCode": "プロバイダーエラーコード",
+      "baseUrlRequired": "Base URL を入力してください",
+      "keyType": "Key タイプ",
+      "keyTypeSubscription": "サブスクリプション Key（プラン）",
+      "keyTypePayg": "従量課金",
+      "keyTypeUnknown": "不明",
+      "keyHintSubscription": "サブスクリプション Key（sk-cp 始まり）を検出：Token Plan / M Plan の枠を消費し、账户残高は減りません。テキスト / 画像 / 音声は 5 時間窓と週窓の両方、動画は週窓のみが対象です。",
+      "keyHintPayg": "従量課金 Key（sk-api 始まり）を検出：账户残高を消費し、プラン枠は使われません。H3 の v2 API には従量課金（または動画を含む M Plan Explore / Build）が必要です。",
+      "planQuotaTitle": "サブスクリプション枠",
+      "planQuotaQuery": "残量を取得",
+      "planQuotaHint": "サブスクリプション Key（sk-cp）のみ照会できます。枠は 5 時間窓と週窓で別々に計算され、それぞれ独立にリセットされます。",
+      "planQuotaFailed": "照会失敗",
+      "planQuotaReset": "リセット時刻",
+      "planWindow5h": "5 時間窓",
+      "planWindowWeekly": "週窓",
+      "planQuotaNeedKey": "先に Base URL と API Key を入力してください"
     },
     "styleDialog": {
       "editTitle": "スタイルプリセットを編集",
@@ -455,7 +480,9 @@
       "viewFilm": "完成映像を見る",
       "continue": "制作を続ける",
       "start": "制作を開始",
-      "resolution": "解像度"
+      "resolution": "解像度",
+      "imageStyle": "画風",
+      "imageStyleNone": "デフォルト（指定なし）"
     },
     "model": {
       "defaultWith": "デフォルト · {model}",
@@ -876,7 +903,22 @@
       "restoreFailed": "動画を復旧 ({n})",
       "transferring": "動画生成済み・転送中",
       "awaitingDelivery": "動画生成済み・配信待ち",
-      "restoreHint": "既存のタスクを復旧し、重複生成を避けます"
+      "restoreHint": "既存のタスクを復旧し、重複生成を避けます",
+      "failureDetail": "失敗詳細を見る",
+      "failureDetailTitle": "失敗詳細",
+      "failureStage": "失敗段階",
+      "failureHttpStatus": "HTTP ステータス",
+      "failureProviderCode": "プロバイダーエラーコード",
+      "failureProviderMessage": "プロバイダーエラー内容",
+      "failureRequestUrl": "リクエストURL",
+      "failureRequestBody": "リクエスト内容",
+      "failureResponseBody": "レスポンス内容",
+      "failureHint": "対処のヒント",
+      "failureUpstreamTask": "上流タスクID",
+      "failureTime": "発生時刻",
+      "noFailureDetail": "このタスクには構造化された失敗詳細が記録されていません",
+      "copyFailureDetail": "詳細をコピー",
+      "failureDetailCopied": "失敗詳細をコピーしました"
     }
   },
   "errors": {
