@@ -15,17 +15,30 @@ export function joinProviderUrl(baseUrl: string, requiredPrefix: string, path: s
   try {
     const url = new URL(normalizedBase)
     const currentPath = url.pathname.replace(/\/+$/, '')
-    const mergedPrefix = currentPath.endsWith(normalizedPrefix)
-      ? currentPath
-      : `${currentPath}${normalizedPrefix}`
+    // 若已有路径以版本号段结尾（如 /v1、/v2），且目标前缀也是版本号段（如 /v2、/v1），
+    // 则将已有版本号替换为目标版本号，避免产生 /v1/v2 或 /v2/v1 等冲突路径
+    const versionPattern = /\/v\d+$/i
+    let cleanPath = currentPath
+    if (versionPattern.test(cleanPath) && versionPattern.test(normalizedPrefix)) {
+      cleanPath = cleanPath.replace(versionPattern, '')
+    }
+    const mergedPrefix = cleanPath.endsWith(normalizedPrefix)
+      ? cleanPath
+      : `${cleanPath}${normalizedPrefix}`
 
     url.pathname = `${mergedPrefix}${normalizedPath}`.replace(/\/{2,}/g, '/')
     if (rawQuery) url.search = rawQuery
     return url.toString()
   } catch {
-    const basePath = normalizedBase.endsWith(normalizedPrefix)
-      ? normalizedBase
-      : `${normalizedBase}${normalizedPrefix}`
+    const versionPattern = /\/v\d+$/i
+    let cleanBase = normalizedBase
+    if (versionPattern.test(cleanBase) && versionPattern.test(normalizedPrefix)) {
+      cleanBase = cleanBase.replace(versionPattern, '')
+    }
+    const basePath = cleanBase.endsWith(normalizedPrefix)
+      ? cleanBase
+      : `${cleanBase}${normalizedPrefix}`
+    return `${basePath}${normalizedPath}${rawQuery ? `?${rawQuery}` : ''}`
     return `${basePath}${normalizedPath}${rawQuery ? `?${rawQuery}` : ''}`
   }
 }

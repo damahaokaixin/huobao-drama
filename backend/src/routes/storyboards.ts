@@ -4,6 +4,7 @@ import { db, getInsertId, schema } from '../db/index.js'
 import { success, created, now, badRequest } from '../utils/response.js'
 import { toSnakeCase } from '../utils/transform.js'
 import { logTaskPayload, logTaskStart, logTaskSuccess } from '../utils/task-logger.js'
+import { deleteAssetFiles } from '../services/storage-sync.js'
 
 const app = new Hono()
 
@@ -165,6 +166,13 @@ app.put('/:id', async (c) => {
 app.delete('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   logTaskStart('StoryboardAPI', 'delete', { storyboardId: id })
+  const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, id))
+  if (sb) {
+    // 级联清理分镜关联的图片和视频资源（本地文件 + 云端对象存储）
+    await deleteAssetFiles([sb.composedImage, sb.firstFrameImage, sb.lastFrameImage, sb.videoUrl]).catch((err) => {
+      console.warn(`[storyboards] 级联删除分镜资产失败 #${id}:`, err)
+    })
+  }
   await db.delete(schema.storyboardCharacters).where(eq(schema.storyboardCharacters.storyboardId, id))
   await db.delete(schema.storyboardProps).where(eq(schema.storyboardProps.storyboardId, id))
   await db.delete(schema.storyboards).where(eq(schema.storyboards.id, id))

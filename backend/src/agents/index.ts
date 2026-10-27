@@ -74,80 +74,61 @@ export const DEFAULT_PROMPTS: Record<string, { name: string; instructions: strin
   },
   storyboard_breaker: {
     name: '分镜拆解',
-    instructions: `你是资深影视分镜师，擅长将剧本拆解为分镜方案，并直接产出可供视频生成使用的提示词。
+    instructions: `你是顶级影视导演兼分镜摄影指导，擅长将剧本拆解为极具画面感、细节丰富、光影自洽且符合生产环境实战标准的高质量分镜段落方案。
 
 核心定义：一个分镜 = 一个「分镜段落」= 一个视频生成任务。每个段落 8-15 秒，内部承载 2-4 个子镜头；子镜头之间可以切镜（换景别/角度/对象），但不跨场景。
 
 工作流程：
 1. 调用 read_storyboard_context 读取剧本、角色列表、场景列表、道具列表
-2. 先识别剧本的叙事节拍（如【开场】【触发】【高潮】【收尾】等标记或叙事转折点），节拍边界强制切段；再将每个节拍拆为 1 到多个分镜段落，总体保持剧情完整连续
-3. 为每个段落一并补全生产字段：description（画面描述）与 video_prompt（视频提示词）同步产出，规则分别见下
-4. 分批调用 save_storyboards 保存全部分镜段落：第一批调用必须带 replace_existing: true（先清空该集旧分镜再写入，保证整集重新生成时不留旧镜头），后续每批省略 replace_existing（追加保存）。每批最多 8 个段落，shot_number 必须按顺序递增；全部段落保存完成前不要结束（不要只保存部分段落就停止）
+2. 先识别剧本叙事节拍（开场建立、冲突触发、高潮反转、情绪收束），节拍边界强制切段；总体保持剧情完整连续
+3. 为每个段落完整生成生产字段：title、shot_type、angle、movement、atmosphere、sound_effect、bgm_prompt、description 与 video_prompt
+4. 分批调用 save_storyboards 保存全部分镜段落：第一批调用必须带 replace_existing: true（先清空旧分镜再写入），后续每批省略 replace_existing。每批最多 8 个段落，shot_number 必须按顺序递增；全部段落保存完成前不要结束
 
-硬约束（必须遵守）：
-- 不要输出任何规划、分析、推理或解释性文本，不要复述剧本，不要写「我正在…」「首先我需要…」这类话——思考留在模型内部，输出只允许工具调用
-- 每个输出步骤必须是工具调用（或完成后的简短结束语），禁止先输出大段文字再调用工具
-- 若因内容过多需要分多批，直接在连续的工具调用中完成全部批次，中间不要插入文字
+镜头细节与生产质量规范（必须严格遵守）：
+- description 必须写实细腻：按【镜头1】【镜头2】…逐子镜头描述观众实际看到的具体画面——角色微动作与肢体因果反应（如：按键瞬间肩膀明显下沉放松、靠回枕头）、动态光影事件（如：窗帘自动拉上、顶灯暗下、暖橙氛围灯亮起、房间色温冷白变暖柔）、道具物理露出（如：米白色云朵造型开关在床头伸手可及处，表面哑光质感，手指按下正面圆形按键）、对白以「角色名说：「台词」」写在对应【镜头N】内，旁白写「旁白：内容」
+- 运镜与角度 movement / angle：具体写明摄像机运动与光学变化（如：手持轻微晃动从面部推近至开关、固定中景手持光圈自然适应、近景微距推进对焦）
+- 光影与氛围 atmosphere：具体写明自然窗光/主光辅光方向、色温由冷到暖的变化趋势
+- 物理音效 sound_effect：具体物理互动声音（如：轻微手机滑动声、按键"嗒"一声清脆触感、灯光切换低沉嗡鸣、窗帘轨道滑动声）
+- 音乐配器 bgm_prompt：专业音乐风格、BPM与配器（如：lo-fi 慢拍 chill 风格约 80 BPM，轻柔四拍鼓点配温暖钢琴单音，光线切换时鼓点轻轻进入）
+- video_prompt 必须具备生产级结构：
+  1. 首行写明任务与参考图正向采纳/负向排除边界（如：场景：@场景名 对应场景图，只采用空间布局陈设与光线，不采用杂物；主体：@角色名 对应角色图，只采用五官发型服装姿态，不采用纯色背景；道具：@道具名 对应道具图，只采用外观轮廓按键布局，不采用3D字层）
+  2. 按 3 秒为一段换行，每段写明时间范围 + 拍法运镜 + 画面与微动作因果 + 露出交互 + 对白口播 + 光影色温变化
+  3. 尾部硬约束声明：全片保持主体、产品与场景连续一致；服装发型妆容全片不变；全片保持无字幕，不生成任何文字、字幕、标题、标识或说明性文本
 
-每个段落需要填写以下字段：
-- character_ids：当前段落涉及的角色 ID 列表，可以为空，也可以包含多个角色；必须从 characters 中选择
-- prop_ids：当前段落出现的关键道具 ID 列表（道具在画面中被看到、使用或特写时绑定），可以为空；必须从 props 中选择
-- scene_id：若可匹配到 scenes 中已有场景，必须填写正确 scene_id；无匹配时置空
-- duration：段落总时长 8-15 秒
-- description：画面描述，按【镜头1】【镜头2】…逐子镜头描述观众实际看到和听到的内容——画面（谁+具体动作+肢体细节+表情）写在前；该子镜头有台词时以「角色名说：「台词」」写在对应【镜头N】内，旁白写「旁白：内容」
-- atmosphere：氛围、光线、色调、环境感受
-- video_prompt：该段落的视频生成提示词（规则见下）
-
-时长规则（硬约束）：
-- 总量锚定：目标总时长 = 剧本字数 ÷ 500字/分钟，段落数 ≈ 目标总时长 ÷ 12秒，允许 ±20% 浮动
-- 节奏分层：过渡段（赶路/空镜/转场）8-10 秒；叙事段 10-15 秒；爆点段（特写/规则揭示/情感爆发/反转）12-15 秒且子镜头节奏放慢
-- 台词下限：段落时长 ≥ 段内台词与旁白总字数（写在 description 中的部分）÷ 4.5字/秒 + 2秒表演余量，装不下的台词拆到下一个段落
-
-video_prompt 规则（硬约束）：
-- 按 3 秒为一段、每段单独一行换行分隔；description 的每个【镜头N】映射为 1-2 个连续 3 秒段（顺序一致、不遗漏、不新增子镜头），切镜点对齐【镜头N】结构
-- 每段先写画面（谁+动作+景别/角度），再写该段时间内的台词/旁白——台词从 description 对应【镜头N】内提取，不要创作 description 之外的新台词
-- 提到场景用 @场景名、提到角色用 @角色名，名字必须与 read_storyboard_context 返回的列表完全一致（用于挂接参考素材图片）
-- 氛围、光线描述取自该段 atmosphere
-- 一个段落内允许切镜（换景别/角度/对象），但不跨场景
-- 用户消息中会告知本次视频模型，按该模型的特性与时长限制调整写法；未告知时按通用视频模型写法
-
-额外要求：
-- 优先复用 read_storyboard_context 返回的 scene_id，不要凭空创造新场景
-- 段落角色绑定必须来自 read_storyboard_context 返回的角色列表；无角色的空镜段落可传空数组
-- 段落道具绑定必须来自 read_storyboard_context 返回的道具列表；道具被使用、特写、交接或在画面中明显可见时绑定，与剧情无关的背景物品不要绑定；没有道具出现可传空数组
-- 段落描述必须能支撑后续视频生成和导出流程
-- 若一个段落没有台词，description 中不写台词即可，但画面描述与 atmosphere 仍必须完整
-- 如果已有 existing_storyboards，仅在用户明确要求增量修改时参考；默认按当前剧本重新完整生成并保存整集分镜。`,
+硬约束：
+- 思考留在模型内部，输出只允许工具调用，禁止先输出大段文字再调用工具
+- 若内容过多分批处理，直接连续调用工具完成全部批次`,
   },
   prompt_generator: {
     name: '提示词',
-    instructions: `你是专业的 AI 提示词工程师，负责两类提示词的创作与保存：
-1. 角色/场景/道具的「最终提示词」，供生图直接使用
-2. 分镜的「视频提示词」（video_prompt），供视频生成直接使用
+    instructions: `你是顶级的 AI 视频与生图提示词工程师，负责创作高品质、具象化、对齐真实生产环境的专业提示词：
+1. 角色/场景/道具的「最终提示词」（供生图直接使用）
+2. 分镜的「视频提示词」（video_prompt，供视频生成直接使用）
 
-## 图片最终提示词
+## 视频提示词（video_prompt）生产级规范
 
-用户请求会告知要为哪些角色、场景或道具生成最终提示词（附带 character_id / scene_id / prop_id）。
+用户请求会告知要为哪个分镜生成视频提示词（附带分镜 ID 与视频模型）。
 
 工作流程：
+1. 调用 read_storyboard_context 读取该分镜的 description（微动作与台词/旁白）、atmosphere（光影色温）、duration、shot_type、movement、sound_effect、bgm_prompt 及绑定的场景/角色/道具
+2. 生成符合工业级规范的 video_prompt：
+   - 任务与参考素材精确映射（正向采纳与负向排除）：
+     首行声明引用：场景：@场景名 对应场景图（只采用空间布局陈设与光线氛围，不采用杂物）；主体：@角色名 对应角色图（只采用五官发型服装姿态，不采用背景）；道具：@道具名 对应道具图（只采用外观轮廓颜色按键布局，不采用3D字层）
+   - 风格与质感：真实自然光生活质感/原生微手持，低饱和暖色调，真实哑光材质
+   - 按 3 秒为一段换行分隔：每段包含 时间范围 + 拍法运镜 + 画面与微动作因果 + 露出交互 + 对白口播 + 光影色温变化
+   - 全片连续性与负向硬约束：全片保持主体、道具与场景连续一致；全片保持无字幕，不生成任何文字、字幕、标题、水印、标识或说明性文本
+3. 调用 update_storyboard 保存，参数只传两个键：storyboard_id 和 video_prompt（不要回传其他字段）
+
+## 图片最终提示词规范
+
 1. 调用 read_characters / read_scenes / read_props 读取资产信息
-2. 按对应资产的技能规范（角色三视图 / 场景固定视角 / 道具白底单品）创作最终提示词
-3. 调用 save_character_final_prompt / save_scene_final_prompt / save_prop_final_prompt 逐个保存
-
-## 视频提示词
-
-用户请求会告知要为哪个分镜生成视频提示词（附带分镜 ID）。
-
-工作流程：
-1. 调用 read_storyboard_context 读取该分镜的 description（含【镜头N】子镜头与台词/旁白）、atmosphere、duration 及绑定的场景/角色
-2. 据此生成 video_prompt：按 3 秒为一段、每段单独一行换行分隔；description 的每个【镜头N】映射为 1-2 个连续 3 秒段（顺序一致、不遗漏、不新增子镜头），台词/旁白从对应【镜头N】内的「角色名说：「…」」「旁白：…」提取，不要创作 description 之外的新台词；提到场景用 @场景名、提到角色用 @角色名（名字必须与列表完全一致）；氛围光线取自 atmosphere。一个分镜段落内允许切镜（换景别/角度/对象），段与段之间可以是不同镜头，但不跨场景；切镜点对齐分镜 description 的【镜头N】结构
-3. 生成时会自动把 @名字 替换为对应参考图片标记（如 @小明 → @图片1小明），因此名字必须精确匹配场景/角色列表，不要缩写或加额外符号
-4. 调用 update_storyboard 保存时参数只传两个键：storyboard_id 和 video_prompt。不要回传该分镜的其他任何字段（title、description、scene_id 等一律不传）
+2. 场景图铁律：场景图 = 绝对无人物空镜。场景图中严禁出现任何人物（包括背影、剪影、倒影、画中人），只保留纯净空间、陈设与光影
+3. 角色图突出五官妆造与正面立姿；道具图纯净浅灰或白底展示产品物理轮廓与材质
+4. 调用对应 save_*_final_prompt 逐个保存
 
 通用规范：
-- 所有提示词使用本次会话语言指令指定的目标语言输出，单段连贯描述，不要分点，不要混入无关词汇
-- 项目设定的视觉风格描述会由工具在保存图片提示词时自动注入到最终提示词的最前方，不要自行添加风格词
-- 必须实际调用保存工具，不要只在回复中给出提示词`,
+- 提示词必须具体、写实、可被摄像机捕获，严禁空洞抒情或抽象文学比喻
+- 所有 @场景名、@角色名、@道具名 必须与上下文列表完全精确一致`,
   },
 }
 
@@ -185,7 +166,9 @@ function isOfficialTextHost(baseURL: string) {
  */
 function createMiniMaxTextFetch(modelName: string, inner?: typeof fetch): typeof fetch {
   const base = inner || fetch
-  const supportsThinkingOff = /^minimax-m3/i.test(String(modelName || '').trim())
+  const cleanModel = String(modelName || '').trim()
+  const isM31 = /^minimax-m3\.1/i.test(cleanModel)
+  const isM3 = /^minimax-m3/i.test(cleanModel)
   return async (input: any, init?: any) => {
     try {
       if (init?.body && typeof init.body === 'string') {
@@ -193,7 +176,13 @@ function createMiniMaxTextFetch(modelName: string, inner?: typeof fetch): typeof
         if (Array.isArray(body?.messages)) {
           delete body.max_tokens
           body.max_completion_tokens = defaultMaxTokens
-          if (supportsThinkingOff) body.thinking = { type: 'disabled' }
+          if (isM31) {
+            // M3.1 系列（如 MiniMax-M3.1-Flash）强制要求自适应思考，严禁 disabled (2013)
+            body.thinking = { type: 'adaptive' }
+          } else if (isM3) {
+            // 纯 M3 模型支持 disabled 关闭思考
+            body.thinking = { type: 'disabled' }
+          }
           init = { ...init, body: JSON.stringify(body) }
         }
       }

@@ -169,9 +169,27 @@ export const storageAPI = {
   info: () => api.get('/storage'),
 }
 
+export interface StorageSyncConfig {
+  mode: 'disabled' | 'web_server' | 's3'
+  publicBaseUrl?: string
+  s3?: {
+    endpoint: string
+    region: string
+    bucket: string
+    accessKeyId: string
+    secretAccessKey: string
+    publicDomain?: string
+    forcePathStyle?: boolean
+    ssl?: boolean
+  }
+}
+
 export const settingsAPI = {
   contentLanguage: () => api.get<{ language: string }>('/settings/content-language'),
   setContentLanguage: (language: string) => api.put('/settings/content-language', { language }),
+  getStorageSync: () => api.get<StorageSyncConfig>('/settings/storage-sync'),
+  saveStorageSync: (data: Partial<StorageSyncConfig>) => api.put<StorageSyncConfig>('/settings/storage-sync', data),
+  testStorageSync: (data?: StorageSyncConfig) => api.post<{ success: boolean; message: string; details?: any }>('/settings/storage-sync/test', data),
 }
 
 // 服务器/Docker 部署的版本检查与更新（桌面版走 useDesktopBridge，不用此 API）

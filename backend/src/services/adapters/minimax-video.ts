@@ -57,6 +57,7 @@ import {
   type MiniMaxVideoProfile,
 } from './minimax-common'
 import { ProviderError } from './errors'
+import { compileH3Prompt } from './minimax-h3-prompt.js'
 
 /** H3 默认模型 */
 const DEFAULT_H3_MODEL = 'MiniMax-H3'
@@ -127,7 +128,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
 
   private buildH3Request(config: AIConfig, record: VideoGenerationRecord, model: string): ProviderRequest {
     const profile = getH3Profile(model)!
-    const prompt = (record.prompt || '').trim()
+    let prompt = (record.prompt || '').trim()
     const refImages = parseUrlArray(record.referenceImageUrls)
     const refVideos = parseUrlArray(record.referenceVideoUrls)
     const refAudios = parseUrlArray(record.referenceAudioUrls)
@@ -148,6 +149,18 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
         hint: '请精简提示词后重试',
       })
     }
+
+    const resolution = pickResolution(record.resolution, profile)
+    const duration = pickDuration(record.duration, profile, resolution)
+
+    // 使用 MiniMax H3 官方提示词规范编译器自动转译（分镜头、对白口型同步、参考主体映射、首尾帧对齐）
+    prompt = compileH3Prompt({
+      prompt,
+      duration,
+      hasFirstFrame: Boolean(firstFrame),
+      hasLastFrame: Boolean(lastFrame),
+      referenceImageCount: refImages.length,
+    })
 
     const totalRefs = refImages.length + refVideos.length + refAudios.length + (firstFrame ? 1 : 0) + (lastFrame ? 1 : 0)
     if (refImages.length > REF_LIMITS.images || refVideos.length > REF_LIMITS.videos || refAudios.length > REF_LIMITS.audios || totalRefs > REF_LIMITS.total) {
@@ -187,11 +200,10 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
       content.push({ type: 'audio_url', audio_url: { url } })
     }
 
-    const resolution = pickResolution(record.resolution, profile)
     const body: any = {
       model,
       content,
-      duration: pickDuration(record.duration, profile, resolution),
+      duration,
       resolution,
     }
 

@@ -13,8 +13,194 @@
 
       <div class="settings-content">
 
+        <!-- ===== Web 服务与云存储 ===== -->
+        <div v-if="tab === 'web'" class="settings-scroll">
+          <div class="settings-head">
+            <h2 class="settings-title">Web 服务与云资产存储</h2>
+            <p class="settings-desc">配置素材公网访问地址或对象存储（OSS / COS / S3）。MiniMax H3 等全模态视频模型生成视频时，需通过公网 URL 访问本地参考素材（首尾帧 ≤1、参考图 ≤9、单请求媒体 ≤64MB）。</p>
+          </div>
+
+          <!-- 模式选择卡片 -->
+          <section class="card svc-group">
+            <div class="svc-group-head">
+              <div class="svc-group-heading">
+                <span class="svc-group-title">素材公网访问策略</span>
+                <div class="svc-group-sub">选择如何向外部 AI 模型提供分镜、角色及场景参考素材的下载地址</div>
+              </div>
+            </div>
+
+            <div class="storage-mode-grid">
+              <div
+                class="storage-mode-card"
+                :class="{ active: storageSyncForm.mode === 'disabled' }"
+                @click="storageSyncForm.mode = 'disabled'"
+              >
+                <div class="mode-icon"><HardDrive :size="20" /></div>
+                <div class="mode-info">
+                  <div class="mode-title">仅本地模式（未配置公网）</div>
+                  <div class="mode-desc">仅在本地保存，不支持 MiniMax H3 等需要外链拉取参考图的模型。</div>
+                </div>
+              </div>
+
+              <div
+                class="storage-mode-card"
+                :class="{ active: storageSyncForm.mode === 'web_server' }"
+                @click="storageSyncForm.mode = 'web_server'"
+              >
+                <div class="mode-icon"><Globe :size="20" /></div>
+                <div class="mode-info">
+                  <div class="mode-title">Web 服务公网域名</div>
+                  <div class="mode-desc">通过反向代理域名、公网 IP 或内网穿透访问本服务的 /static/ 资源。</div>
+                </div>
+              </div>
+
+              <div
+                class="storage-mode-card"
+                :class="{ active: storageSyncForm.mode === 's3' }"
+                @click="storageSyncForm.mode = 's3'"
+              >
+                <div class="mode-icon"><Cloud :size="20" /></div>
+                <div class="mode-info">
+                  <div class="mode-title">云对象存储（S3 / OSS / COS）</div>
+                  <div class="mode-desc">工业级推荐！兼容阿里云 OSS、腾讯云 COS、AWS S3。素材即时双写上传，删除时级联清理。</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Web 服务配置 -->
+          <section v-if="storageSyncForm.mode === 'web_server'" class="card svc-group">
+            <div class="svc-group-head">
+              <div class="svc-group-heading">
+                <span class="svc-group-title">Web 外部公网访问地址</span>
+                <div class="svc-group-sub">用于将本地 static/ 路径拼接为大模型可下载的外部 URL</div>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field full">
+                <label class="form-label">公网 Base URL (PUBLIC_BASE_URL)</label>
+                <input
+                  v-model="storageSyncForm.publicBaseUrl"
+                  type="text"
+                  class="input"
+                  placeholder="https://drama.example.com 或 http://123.45.67.89:5679"
+                />
+                <div class="field-hint">请确保外网能够正常访问该地址下的 /static/ 静态资源。无需以斜杠 / 结尾。</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- S3 / OSS / COS 配置 -->
+          <section v-if="storageSyncForm.mode === 's3'" class="card svc-group">
+            <div class="svc-group-head">
+              <div class="svc-group-heading">
+                <span class="svc-group-title">S3 兼容对象存储配置</span>
+                <div class="svc-group-sub">支持阿里云 OSS、腾讯云 COS、AWS S3、MinIO 等标准 S3 协议对象存储</div>
+              </div>
+              <div class="preset-buttons ml-auto">
+                <span class="preset-label">快捷填充模板:</span>
+                <button type="button" class="btn btn-sm" @click="applyS3Preset('aliyun')">阿里云 OSS</button>
+                <button type="button" class="btn btn-sm" @click="applyS3Preset('tencent')">腾讯云 COS</button>
+                <button type="button" class="btn btn-sm" @click="applyS3Preset('aws')">AWS S3</button>
+                <button type="button" class="btn btn-sm" @click="applyS3Preset('minio')">MinIO</button>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-field">
+                <label class="form-label">Bucket 存储桶名称 <span class="required">*</span></label>
+                <input v-model="storageSyncForm.s3.bucket" type="text" class="input" placeholder="huobao-drama-assets" />
+              </div>
+
+              <div class="form-field">
+                <label class="form-label">Region 区域 <span class="required">*</span></label>
+                <input v-model="storageSyncForm.s3.region" type="text" class="input" placeholder="cn-hangzhou / ap-guangzhou / us-east-1" />
+              </div>
+
+              <div class="form-field full">
+                <label class="form-label">Endpoint 服务节点地址 <span class="required">*</span></label>
+                <input v-model="storageSyncForm.s3.endpoint" type="text" class="input" placeholder="https://oss-cn-hangzhou.aliyuncs.com" />
+                <div class="field-hint">请填写完整协议与域名，如 https://oss-cn-hangzhou.aliyuncs.com（无需带 Bucket 名）</div>
+              </div>
+
+              <div class="form-field">
+                <label class="form-label">AccessKey ID <span class="required">*</span></label>
+                <input v-model="storageSyncForm.s3.accessKeyId" type="text" class="input" placeholder="LTAI5t..." />
+              </div>
+
+              <div class="form-field">
+                <label class="form-label">Secret Access Key <span class="required">*</span></label>
+                <div class="input-password-wrap">
+                  <input
+                    v-model="storageSyncForm.s3.secretAccessKey"
+                    :type="showS3Secret ? 'text' : 'password'"
+                    class="input"
+                    placeholder="若无需修改可留空或保留 ******"
+                  />
+                  <button type="button" class="btn-pwd-eye" @click="showS3Secret = !showS3Secret">
+                    <EyeOff v-if="showS3Secret" :size="14" />
+                    <Eye v-else :size="14" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-field full">
+                <label class="form-label">自定义 CDN / 访问域名 (可选)</label>
+                <input v-model="storageSyncForm.s3.publicDomain" type="text" class="input" placeholder="https://assets.my-studio.com" />
+                <div class="field-hint">若存储桶已绑定 CDN 加速域名或自定义域名，请在此填写。未配置则按官方 Bucket 默认公网域名访问。</div>
+              </div>
+
+              <div class="form-field checkbox-field full">
+                <label class="checkbox-label">
+                  <input v-model="storageSyncForm.s3.forcePathStyle" type="checkbox" />
+                  <span>启用 Path-Style 路径（MinIO 或特定私有云存储桶通常需要勾选，阿里云 OSS / 腾讯云 COS 无需勾选）</span>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <!-- 底部操作与测试状态 -->
+          <div class="web-storage-actions">
+            <button
+              class="btn btn-primary"
+              :disabled="storageSyncSaving"
+              @click="handleSaveStorageSync"
+            >
+              <Loader2 v-if="storageSyncSaving" :size="14" class="animate-spin" />
+              <Check v-else :size="14" />
+              保存配置
+            </button>
+
+            <button
+              v-if="storageSyncForm.mode !== 'disabled'"
+              class="btn btn-secondary"
+              :disabled="storageSyncTesting"
+              @click="handleTestStorageSync"
+            >
+              <Loader2 v-if="storageSyncTesting" :size="14" class="animate-spin" />
+              <Server v-else :size="14" />
+              测试连通性
+            </button>
+          </div>
+
+          <!-- 测试反馈横幅 -->
+          <div
+            v-if="storageSyncTestResult"
+            class="storage-test-feedback"
+            :class="{ ok: storageSyncTestResult.ok, err: !storageSyncTestResult.ok }"
+          >
+            <div class="test-feedback-header">
+              <span class="test-feedback-badge">{{ storageSyncTestResult.ok ? '测试通过' : '测试失败' }}</span>
+              <span class="test-feedback-msg">{{ storageSyncTestResult.message }}</span>
+            </div>
+            <div v-if="storageSyncTestResult.details" class="test-feedback-detail mono">
+              {{ JSON.stringify(storageSyncTestResult.details, null, 2) }}
+            </div>
+          </div>
+        </div>
+
         <!-- ===== 通用（内容语言） ===== -->
-        <div v-if="tab === 'general'" class="settings-scroll">
+        <div v-else-if="tab === 'general'" class="settings-scroll">
           <div class="settings-head">
             <h2 class="settings-title">{{ t('settings.general.title') }}</h2>
             <p class="settings-desc">{{ t('settings.general.desc') }}</p>
@@ -570,9 +756,20 @@
             <div v-if="cfgTestResult.suggestion" class="test-result-suggestion">{{ cfgTestResult.suggestion }}</div>
             <div class="mono test-result-url">{{ cfgTestResult.method }} {{ cfgTestResult.url }}</div>
             <div v-if="cfgTestResult.detail && cfgTestResult.detail.reply" class="mono test-result-preview">{{ cfgTestResult.detail.reply }}</div>
-            <div v-else-if="cfgTestResult.detail && cfgTestResult.detail.task_id" class="mono test-result-preview">task_id: {{ cfgTestResult.detail.task_id }}<span v-if="cfgTestResult.detail.task_status"> · {{ cfgTestResult.detail.task_status }}</span></div>
-            <div v-else-if="cfgTestResult.detail && cfgTestResult.detail.image_url" class="mono test-result-preview">{{ cfgTestResult.detail.image_url }}</div>
-            <div v-if="cfgTestResult.response_preview" class="mono test-result-preview">{{ cfgTestResult.response_preview }}</div>
+            <div v-if="cfgTestResult.detail && cfgTestResult.detail.task_id" class="mono test-result-preview">
+              task_id: {{ cfgTestResult.detail.task_id }}
+              <span v-if="cfgTestResult.detail.task_status"> · {{ cfgTestResult.detail.task_status }}</span>
+              <span v-if="cfgTestResult.detail.submit_latency_ms" class="text-xs text-muted"> (提交耗时: {{ cfgTestResult.detail.submit_latency_ms }}ms)</span>
+            </div>
+            <div v-if="cfgTestResult.detail && cfgTestResult.detail.image_url" class="mono test-result-preview">
+              <span style="color: var(--color-success, #22c55e); margin-right: 6px;">[图片已生成]</span>
+              <a :href="cfgTestResult.detail.image_url" target="_blank" rel="noopener noreferrer" style="text-decoration: underline; word-break: break-all;">{{ cfgTestResult.detail.image_url }}</a>
+            </div>
+            <div v-if="cfgTestResult.detail && cfgTestResult.detail.video_url" class="mono test-result-preview">
+              <span style="color: var(--color-success, #22c55e); margin-right: 6px;">[成片已生成]</span>
+              <a :href="cfgTestResult.detail.video_url" target="_blank" rel="noopener noreferrer" style="text-decoration: underline; word-break: break-all;">{{ cfgTestResult.detail.video_url }}</a>
+            </div>
+            <div v-if="cfgTestResult.response_preview && (!cfgTestResult.detail || (!cfgTestResult.detail.image_url && !cfgTestResult.detail.video_url && !cfgTestResult.detail.reply))" class="mono test-result-preview">{{ cfgTestResult.response_preview }}</div>
           </div>
           <p v-if="cfgTestQuotaHint" class="field-hint">{{ cfgTestQuotaHint }}</p>
           <!-- MiniMax 订阅套餐（Token Plan / M Plan）额度 -->
@@ -742,7 +939,7 @@
 </template>
 
 <script setup>
-import { Plus, Pencil, Trash2, FileText, ChevronDown, Check, Loader2, Bot, Cpu, Sparkles, Palette, ExternalLink, Star, HardDrive, Database, RefreshCw, Download, Languages, SunMoon, X } from 'lucide-vue-next'
+import { Plus, Pencil, Trash2, FileText, ChevronDown, Check, Loader2, Bot, Cpu, Sparkles, Palette, ExternalLink, Star, HardDrive, Database, RefreshCw, Download, Languages, SunMoon, X, Globe, Cloud, Server, Eye, EyeOff } from 'lucide-vue-next'
 import BaseSelect from '~/components/BaseSelect.vue'
 import { toast } from 'vue-sonner'
 import { toastError } from '~/composables/useToast'
@@ -761,6 +958,7 @@ const showBrandImage = ref(true)
 const tab = ref('ai')
 const baseTabs = computed(() => [
   { id: 'ai', label: t('settings.tabs.ai'), icon: Cpu },
+  { id: 'web', label: t('settings.tabs.web') || 'Web 服务与云存储', icon: Globe },
   { id: 'general', label: t('settings.tabs.general'), icon: Languages },
   { id: 'styles', label: t('settings.tabs.styles'), icon: Palette },
   { id: 'agents', label: t('settings.tabs.agents'), icon: Bot },
@@ -1380,7 +1578,110 @@ async function saveStyle() {
   } catch (e) { toastError(e) }
 }
 
-onMounted(() => { loadCfgs(); loadAgents(); loadAllSkills(); loadAgentPrompt(selectedAgent.value); loadStylePresets() })
+// ===== Web 服务与云存储同步配置 =====
+const showS3Secret = ref(false)
+const storageSyncSaving = ref(false)
+const storageSyncTesting = ref(false)
+const storageSyncTestResult = ref(null)
+
+const storageSyncForm = reactive({
+  mode: 'disabled',
+  publicBaseUrl: '',
+  s3: {
+    endpoint: '',
+    region: 'cn-hangzhou',
+    bucket: '',
+    accessKeyId: '',
+    secretAccessKey: '',
+    publicDomain: '',
+    forcePathStyle: false,
+    ssl: true,
+  },
+})
+
+function applyS3Preset(type) {
+  if (type === 'aliyun') {
+    storageSyncForm.s3.endpoint = 'https://oss-cn-hangzhou.aliyuncs.com'
+    storageSyncForm.s3.region = 'cn-hangzhou'
+    storageSyncForm.s3.forcePathStyle = false
+    storageSyncForm.s3.ssl = true
+  } else if (type === 'tencent') {
+    storageSyncForm.s3.endpoint = 'https://cos.ap-guangzhou.myqcloud.com'
+    storageSyncForm.s3.region = 'ap-guangzhou'
+    storageSyncForm.s3.forcePathStyle = false
+    storageSyncForm.s3.ssl = true
+  } else if (type === 'aws') {
+    storageSyncForm.s3.endpoint = 'https://s3.us-east-1.amazonaws.com'
+    storageSyncForm.s3.region = 'us-east-1'
+    storageSyncForm.s3.forcePathStyle = false
+    storageSyncForm.s3.ssl = true
+  } else if (type === 'minio') {
+    storageSyncForm.s3.endpoint = 'http://127.0.0.1:9000'
+    storageSyncForm.s3.region = 'auto'
+    storageSyncForm.s3.forcePathStyle = true
+    storageSyncForm.s3.ssl = false
+  }
+}
+
+async function loadStorageSync() {
+  try {
+    const res = await settingsAPI.getStorageSync()
+    if (res) {
+      storageSyncForm.mode = res.mode || 'disabled'
+      storageSyncForm.publicBaseUrl = res.publicBaseUrl || ''
+      if (res.s3) {
+        Object.assign(storageSyncForm.s3, res.s3)
+      }
+    }
+  } catch (e) {
+    console.warn('[settings] 获取存储配置失败:', e)
+  }
+}
+
+async function handleSaveStorageSync() {
+  storageSyncSaving.value = true
+  try {
+    const res = await settingsAPI.saveStorageSync(storageSyncForm)
+    if (res) {
+      storageSyncForm.mode = res.mode || 'disabled'
+      storageSyncForm.publicBaseUrl = res.publicBaseUrl || ''
+      if (res.s3) {
+        Object.assign(storageSyncForm.s3, res.s3)
+      }
+    }
+    toast.success('存储与 Web 服务配置已保存')
+  } catch (e) {
+    toastError(e)
+  } finally {
+    storageSyncSaving.value = false
+  }
+}
+
+async function handleTestStorageSync() {
+  storageSyncTesting.value = true
+  storageSyncTestResult.value = null
+  try {
+    const res = await settingsAPI.testStorageSync(storageSyncForm)
+    storageSyncTestResult.value = {
+      ok: Boolean(res?.success),
+      message: res?.message || '测试通过',
+      details: res?.details,
+    }
+    toast.success(res?.message || '连通性测试通过')
+  } catch (e) {
+    const msg = e?.response?._data?.message || e?.message || String(e)
+    storageSyncTestResult.value = {
+      ok: false,
+      message: msg,
+      details: e?.response?._data,
+    }
+    toast.warning(`测试失败: ${msg}`)
+  } finally {
+    storageSyncTesting.value = false
+  }
+}
+
+onMounted(() => { loadCfgs(); loadAgents(); loadAllSkills(); loadAgentPrompt(selectedAgent.value); loadStylePresets(); loadStorageSync() })
 
 // ===== 应用内引导（设置页）：快捷配置 + 手动模板两步 =====
 const SETTINGS_TOUR = [
@@ -1540,6 +1841,7 @@ async function applyUpdate() {
 }
 
 watch(tab, (t) => {
+  if (t === 'web') loadStorageSync()
   if (t === 'about') refreshUpdateState()
   // 进入 Agent 页总是按当前内容语言重载（幂等）：兜住「先切语言、后进 Agent」的时序
   if (t === 'agents') {
@@ -2075,5 +2377,175 @@ onBeforeUnmount(stopUsagePoll)
   border-radius: 3px;
   background: var(--accent);
   transition: width 0.2s ease;
+}
+
+/* ===== Web 服务与云存储 ===== */
+.storage-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+@media (max-width: 900px) {
+  .storage-mode-grid { grid-template-columns: 1fr; }
+}
+.storage-mode-card {
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+.storage-mode-card:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+.storage-mode-card.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.mode-icon {
+  color: var(--accent);
+}
+.mode-title {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text-0);
+}
+.mode-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  padding: 16px;
+}
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-field.full {
+  grid-column: 1 / -1;
+}
+.form-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.form-label .required {
+  color: var(--error);
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.input-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-password-wrap .input {
+  width: 100%;
+  padding-right: 32px;
+}
+.btn-pwd-eye {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-pwd-eye:hover {
+  color: var(--text-1);
+}
+.preset-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.preset-label {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.checkbox-field {
+  padding: 4px 0;
+}
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.web-storage-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.storage-test-feedback {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.storage-test-feedback.ok {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.05);
+}
+.storage-test-feedback.err {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.05);
+}
+.test-feedback-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.test-feedback-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+}
+.storage-test-feedback.err .test-feedback-badge {
+  background: var(--error);
+}
+.test-feedback-msg {
+  font-size: 13px;
+  color: var(--text-0);
+  font-weight: 550;
+}
+.test-feedback-detail {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: var(--bg-0);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow-x: auto;
+  white-space: pre-wrap;
 }
 </style>

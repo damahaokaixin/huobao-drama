@@ -231,6 +231,7 @@
     "groupBase": "Basic",
     "tabs": {
       "general": "General",
+      "web": "Web & Cloud Storage",
       "ai": "AI Services",
       "styles": "Style Presets",
       "storage": "Storage",

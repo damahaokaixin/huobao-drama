@@ -92,17 +92,31 @@ function buildProbe(serviceType: string, provider: string, baseUrl: string, mode
   }
 
   if (p === 'minimax') {
-    // MiniMax 轻量探针按服务类型挑端点：空请求体不会创建计费任务
+    // MiniMax 文本轻量探针直接走 GET /v1/models（标准只读端点，不产生计费且不会因空参数报 400）
+    if (serviceType === 'text') {
+      return {
+        method: 'GET',
+        url: joinProviderUrl(baseUrl, '/v1', '/models'),
+        headers: bearerHeaders(apiKey),
+        body: undefined,
+      }
+    }
     // 视频按模型族分流：H3 走 v2，Hailuo 经典系列走 v1
     const isH3 = /^minimax-h3/i.test(m)
-    let path = '/v1/chat/completions'
-    if (serviceType === 'video') path = isH3 ? '/v2/video_generation' : '/v1/video_generation'
-    else if (serviceType === 'image') path = '/v1/image_generation'
+    let path = '/v1/image_generation'
+    const body: Record<string, any> = {}
+    if (m) body.model = m
+    if (serviceType === 'video') {
+      path = isH3 ? '/v2/video_generation' : '/v1/video_generation'
+      if (!body.model) body.model = isH3 ? 'MiniMax-H3' : 'MiniMax-Hailuo-2.3'
+    } else if (serviceType === 'image') {
+      if (!body.model) body.model = 'image-01'
+    }
     return {
       method: 'POST',
       url: joinProviderUrl(baseUrl, '', path),
       headers: bearerHeaders(apiKey, true),
-      body: {},
+      body,
     }
   }
 
@@ -149,14 +163,28 @@ async function runLightProbe(input: {
   // MiniMax 把业务错误放在 base_resp 里：HTTP 200 也可能是鉴权/参数失败，
   // 不解析的话轻量探针会把「Key 无效」误报成「端点可访问」。
   const base = input.provider.toLowerCase() === 'minimax' ? parseBaseResp(safeJson(text)) : {}
-  const businessError = base.statusCode != null && base.statusCode !== 0
+  const isAuthError = base.statusCode === 1004 || base.statusCode === 2049 || [401, 403].includes(resp.status)
+  const isModelPermissionError = base.statusCode === 1039
 
-  const ok = resp.ok && !businessError
+  // 当探测未传 prompt 等内容以避免扣费时，若返回 2013 或 400 缺少必填参数，
+  // 证明请求已通过网关鉴权且端点畅通（如果是假 Key 会在 1004 / 401 处拦截）
+  const isProbeExpectedParamError = !isAuthError && !isModelPermissionError && (
+    base.statusCode === 2013 ||
+    base.statusCode === 1000 ||
+    base.statusCode === 1001 ||
+    /missing|required|prompt|content|param/i.test(text)
+  )
+
+  const businessError = (base.statusCode != null && base.statusCode !== 0) && !isProbeExpectedParamError
+
+  const ok = (resp.ok || isProbeExpectedParamError) && !businessError
   const stage = ok
     ? 'success'
-    : businessError
-      ? (base.statusCode === 1004 || base.statusCode === 2049 ? 'auth' : 'response')
-      : reachable ? 'auth' : 'config'
+    : isAuthError
+      ? 'auth'
+      : isModelPermissionError
+        ? 'response'
+        : reachable ? 'auth' : 'config'
 
   return {
     ok,

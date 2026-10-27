@@ -153,7 +153,8 @@ test('MiniMax H3 video request uses the v2 content array contract', () => {
   assert.equal(req.url, 'https://api.minimaxi.com/v2/video_generation')
   assert.equal(req.body.model, 'MiniMax-H3')
   assert.equal(req.body.content[0].type, 'text')
-  assert.equal(req.body.content[0].text, '@图片1女孩 走进房间')
+  // 经 H3 提示词转译器标准化为 [Image 1] 官方规范
+  assert.match(req.body.content[0].text, /\[Image 1\] 女孩 走进房间/)
   assert.equal(req.body.duration, 8)
   assert.equal(req.body.resolution, '2K')
   assert.equal(req.body.ratio, '9:16')
@@ -325,5 +326,14 @@ test('provider URL builder keeps query strings out of the path', () => {
   assert.equal(
     joinProviderUrl('https://api.openai.com', '/v1', '/models'),
     'https://api.openai.com/v1/models',
+  )
+  // 当用户在 Base URL 中写了 /v1，而目标是 /v2 时，应智能替换为 /v2，避免 /v1/v2 导致 404
+  assert.equal(
+    joinProviderUrl('https://api.minimaxi.com/v1', '/v2', '/video_generation'),
+    'https://api.minimaxi.com/v2/video_generation',
+  )
+  assert.equal(
+    joinProviderUrl('https://api.minimaxi.com/v2', '/v1', '/image_generation'),
+    'https://api.minimaxi.com/v1/image_generation',
   )
 })

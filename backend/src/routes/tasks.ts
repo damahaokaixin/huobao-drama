@@ -172,9 +172,11 @@ app.post('/', async (c) => {
     let configId: number | undefined = body.config_id
     let episodeResolution: string | undefined
     let storyboardDramaId: number | undefined
+    let currentSb: any = null
     if (body.storyboard_id) {
       const [sb] = await db.select().from(schema.storyboards).where(eq(schema.storyboards.id, Number(body.storyboard_id)))
       if (sb) {
+        currentSb = sb
         const [ep] = await db.select().from(schema.episodes).where(eq(schema.episodes.id, sb.episodeId))
         const locked = type === 'image' ? ep?.imageConfigId : ep?.videoConfigId
         if (locked != null && configId == null) configId = locked
@@ -206,6 +208,20 @@ app.post('/', async (c) => {
       const dramaId = body.drama_id ?? storyboardDramaId ?? null
       const stylePrompt = await getDramaStylePrompt(dramaId)
       if (stylePrompt) videoPrompt = `${stylePrompt}，\n${videoPrompt}`
+
+      // 若有关联分镜且提示词中未显式包含光影音效，智能融合分镜中的光影氛围与音效
+      if (currentSb) {
+        const extraHints: string[] = []
+        if (currentSb.atmosphere && !videoPrompt.includes(currentSb.atmosphere)) {
+          extraHints.push(`光影氛围：${currentSb.atmosphere}`)
+        }
+        if (currentSb.soundEffect && !videoPrompt.includes(currentSb.soundEffect)) {
+          extraHints.push(`音效：${currentSb.soundEffect}`)
+        }
+        if (extraHints.length) {
+          videoPrompt = `${videoPrompt}\n${extraHints.join('；')}`
+        }
+      }
     }
 
     const id = type === 'image'

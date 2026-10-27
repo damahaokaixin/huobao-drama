@@ -3019,18 +3019,21 @@ function doBreakdown() {
   const propList = propItems.value.length
     ? propItems.value.map(p => `${p.name}(ID:${p.id})`).join('、')
     : '（当前集还没有道具）'
-  runAgent('storyboard_breaker', `请基于当前集剧本拆分分镜，并为每个分镜段落同时生成 video_prompt（视频生成提示词）。
-本次视频模型：${effectiveVideoModelLabel.value}，请按该模型的特性与时长限制生成 video_prompt。
+  runAgent('storyboard_breaker', `请基于当前集剧本拆分分镜，并为每个分镜段落同时生成高品质工业级 video_prompt（视频生成提示词）。
+本次视频模型：${effectiveVideoModelLabel.value}，请按现代高端视频大模型的生产级提示词规范生成。
 
 当前集已有角色：${charList}
 当前集已有场景：${sceneList}
 当前集已有道具：${propList}
 
-绑定要求：
-- 每个镜头必须根据剧本内容，从上述当前集已有角色中选出出场的角色绑定 character_ids（ID 必须来自上述列表；有角色出场就必须绑定，不要遗漏）
-- 每个镜头尽量匹配上述已有场景填写 scene_id（ID 必须来自上述列表），不要凭空创造新场景
-- 每个镜头出现关键道具（被使用、交接、特写或在画面中明显可见）时，从上述当前集已有道具中绑定 prop_ids（ID 必须来自上述列表）；没有道具出现可传空数组
-- 只有纯环境空镜头才可以不绑定角色`, dramaId, epId.value, onBreakdownDone, chatModelOverride(), chatConfigId())
+工业级镜头与提示词质量要求：
+1. 细致画面描述（description）：按【镜头1】【镜头2】…细化微动作因果（如按键瞬间肩膀放松下沉）、环境互动、动态光影（自然窗光、色温由冷白变暖橙）、道具露出质感，台词以「角色名说：「台词」」写在对应镜头内；
+2. 完整生成镜头语言字段：shot_type（景别）、angle（角度）、movement（运镜与光学适应）、atmosphere（光源与色温变化）、sound_effect（具体物理音效）、bgm_prompt（音乐风格、BPM与配器）；
+3. 生产级 video_prompt 结构：
+   - 首行写明任务与参考素材正向采纳/负向排除边界（只采用空间布局/五官体型/产品轮廓，不采用背景杂物或3D字层）；
+   - 按 3 秒一段换行，每段包含：时间范围 + 拍法运镜 + 画面与微动作因果 + 露出交互 + 对白口播 + 光影色温变化；
+   - 尾部必须包含负向硬约束：全片保持主体、产品与场景连续一致；全片保持无字幕，不生成任何文字、字幕、标题、标识或说明性文本；
+4. 严格绑定角色 character_ids、场景 scene_id 与关键道具 prop_ids。`, dramaId, epId.value, onBreakdownDone, chatModelOverride(), chatConfigId())
 }
 
 /** 拆分完成后刷新并自动补齐缺失的视频提示词（兜住 Agent 漏写/截断） */
@@ -3051,11 +3054,16 @@ async function genVideoPrompt(sb) {
   videoPromptGeneratingIds.value.push(sb.id)
   try {
     await api.post(`/agent/prompt_generator/chat`, {
-      message: `请为分镜 #${idx}(ID:${sb.id})生成视频提示词(video_prompt)。视频模型:${label},请根据该模型的特性和时长限制生成。
+      message: `请为分镜 #${idx}(ID:${sb.id})生成生产级视频提示词(video_prompt)。视频模型:${label}。
 
-该分镜信息:时长 ${sb.duration || 10}s;场景:${getSceneName(sb) || '未绑定'};角色:${charNames};道具:${propNames}。
+该分镜信息:时长 ${sb.duration || 10}s;景别:${sb.shot_type || '中近景'};运镜:${sb.movement || '手持轻微晃动'};场景:${getSceneName(sb) || '未绑定'};角色:${charNames};道具:${propNames}。
 
-请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】子镜头与台词/旁白)、氛围及时长,据此生成 video_prompt(按 3 秒分段换行、用 @角色名/@场景名/@道具名 引用参考素材；段落内允许多镜头切镜,但不跨场景,切镜点对齐 description 的【镜头N】结构),然后调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段,不要重新拆分整集。`,
+请先调用 read_storyboard_context 获取该分镜的画面描述(含【镜头N】微动作与台词/旁白)、氛围(光影色温)及音效,据此生成符合工业级生产环境的 video_prompt：
+1. 首行写明任务与各参考素材正向采纳/负向排除边界（如：场景：@场景名 对应场景图，只采用空间布局陈设与光线氛围，不采用杂物；主体：@角色名 对应角色图，只采用五官发型服装姿态，不采用背景；道具：@道具名 对应道具图，只采用外观轮廓按键布局，不采用3D字层）；
+2. 风格与质感：真实自然光生活质感/原生微手持，低饱和暖色调，真实哑光材质；
+3. 按 3 秒为一段换行分隔：每段包含 时间范围 + 拍法运镜 + 画面与微动作因果 + 露出交互 + 对白口播 + 光影色温变化；
+4. 尾部硬约束声明：全片保持主体、产品与场景连续一致；服装发型妆容全片不变；全片保持无字幕，不生成任何文字、字幕、标题、标识或说明性文本；
+5. 调用 update_storyboard 保存到分镜 ID:${sb.id}。只更新 video_prompt 字段,不要改动其他字段。`,
       drama_id: dramaId,
       episode_id: epId.value,
       model: chatModelOverride() || undefined,

@@ -231,6 +231,7 @@
     "groupBase": "基础",
     "tabs": {
       "general": "通用",
+      "web": "Web 服务与云存储",
       "ai": "AI 服务",
       "styles": "风格预设",
       "storage": "存储位置",

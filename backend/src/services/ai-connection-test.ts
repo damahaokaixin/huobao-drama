@@ -335,9 +335,19 @@ function buildTextRequest(input: ConnectionTestInput, provider: string, model: s
   }
   // MiniMax 的 OpenAI 兼容接口只认 max_completion_tokens
   if (provider === 'minimax') {
-    body.max_completion_tokens = 16
-    // M3 系默认开启思考，若不关掉，16 token 的输出额度会被思考内容吃光导致正文为空
-    if (/^minimax-m3/i.test(model)) body.thinking = { type: 'disabled' }
+    const cleanModel = String(model || '').trim()
+    if (/^minimax-m3\.1/i.test(cleanModel)) {
+      // M3.1 系列（如 MiniMax-M3.1-Flash）强制要求自适应思考，严禁 disabled (2013)
+      body.thinking = { type: 'adaptive' }
+      // 思考模型需要预留足够的 completion tokens 给思考过程
+      body.max_completion_tokens = 150
+    } else {
+      if (/^minimax-m3/i.test(cleanModel)) {
+        // 纯 M3 模型支持 disabled 关闭思考
+        body.thinking = { type: 'disabled' }
+      }
+      body.max_completion_tokens = 16
+    }
   } else {
     body.max_tokens = 16
   }
@@ -353,6 +363,9 @@ function extractTextContent(parsed: any): string {
   const choice = parsed?.choices?.[0]
   const content = choice?.message?.content ?? choice?.text ?? choice?.delta?.content
   if (typeof content === 'string' && content.trim()) return content
+  // MiniMax / DeepSeek 等模型的思考字段（reasoning_content）
+  const reasoning = choice?.message?.reasoning_content ?? choice?.delta?.reasoning_content
+  if (typeof reasoning === 'string' && reasoning.trim()) return reasoning
   // Gemini 原生结构
   const parts = parsed?.candidates?.[0]?.content?.parts
   if (Array.isArray(parts)) {
@@ -528,15 +541,20 @@ async function testVideo(input: ConnectionTestInput, provider: string, model: st
   result.ok = true
   result.stage = 'success'
   result.message = '真实提交成功：上游已接受任务'
-  result.detail = { task_id: taskId, submitted: true }
+  const submitLatencyMs = result.latency_ms
+  result.detail = { task_id: taskId, submitted: true, submit_latency_ms: submitLatencyMs }
 
   // 短轮询：拿到 Success / Fail 就返回，拿到中间态则如实告知仍在生成
   const pollResult = await pollVideoTask(input, provider, model, taskId)
   if (pollResult) {
-    result.detail = { ...result.detail, ...pollResult.detail }
+    result.latency_ms = nowMs() - started
+    result.detail = { ...result.detail, ...pollResult.detail, total_latency_ms: result.latency_ms }
     result.message = pollResult.message
     result.provider_code = pollResult.provider_code
     result.provider_message = pollResult.provider_message
+    if (pollResult.detail?.video_url) {
+      result.response_preview = String(pollResult.detail.video_url)
+    }
     if (!pollResult.ok) {
       result.stage = pollResult.stage
       result.suggestion = pollResult.suggestion
@@ -649,8 +667,35 @@ async function pollVideoTask(
       if (status === 'Success' || status === 'succeeded') {
         out.ok = true
         out.stage = 'success'
-        out.message = '真实提交并生成成功，视频已产出'
-        out.detail = { task_id: taskId, task_status: status, file_id: parsed?.file_id ?? null }
+
+        // 提取成片直链：v2 从 task.content.url 提取；v1 若只有 file_id 则自动调用 /v1/files/retrieve 换取 download_url
+        let videoUrl = task?.content?.url || parsed?.video_url || task?.video_url || null
+        const fileId = parsed?.file_id
+        if (!videoUrl && fileId) {
+          try {
+            const retrieveUrl = joinProviderUrl(input.baseUrl, '/v1', `/files/retrieve?file_id=${encodeURIComponent(String(fileId))}&task_id=${encodeURIComponent(taskId)}`)
+            const rResp = await fetch(retrieveUrl, {
+              method: 'GET',
+              headers: bearer(input.apiKey, false),
+              signal: AbortSignal.timeout(15_000),
+            })
+            if (rResp.ok) {
+              const rData = safeJson(await rResp.text())
+              videoUrl = rData?.file?.download_url || null
+            }
+          } catch {}
+        }
+
+        out.message = videoUrl ? '真实视频生成成功，成片已就绪' : '真实提交并生成成功，视频已产出'
+        out.detail = {
+          task_id: taskId,
+          task_status: status,
+          file_id: fileId ?? null,
+          video_url: videoUrl,
+        }
+        if (videoUrl) {
+          out.response_preview = videoUrl
+        }
         return out
       }
       if (status === 'Fail' || status === 'failed') {

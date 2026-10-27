@@ -11,6 +11,7 @@ import { getActiveConfig, getConfigById } from './ai.js'
 import { now } from '../utils/response.js'
 import { downloadFile, fetchImageAsCompressedDataUrl, generateImageThumb, readImageAsCompressedDataUrl, readImageAsDataUrl, saveBase64Image } from '../utils/storage.js'
 import { extractVideoPoster } from '../utils/video-poster.js'
+import { uploadAssetToStorage, resolvePublicAssetUrl, resolvePublicAssetUrls } from './storage-sync.js'
 import { getImageAdapter, getVideoAdapter } from './adapters/registry'
 import type { AIConfig, ImageProviderAdapter, VideoProviderAdapter } from './adapters/types'
 import { ProviderError, toProviderErrorDetail, type ProviderErrorDetail, previewBody } from './adapters/errors'
@@ -241,7 +242,7 @@ async function processTask(id: number, config: AIConfig) {
       // MiniMax 的 subject_reference 只接受公网可访问的图片 URL；
       // 其它厂商走 dataURL（multipart 上传 / inline_data 都支持）。
       const resolvedReferenceImages = config.provider === 'minimax'
-        ? resolvePublicReferenceImages(params.referenceImages)
+        ? await resolvePublicAssetUrls(params.referenceImages, 'image')
         : await normalizeReferenceImages(params.referenceImages)
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
@@ -253,18 +254,24 @@ async function processTask(id: number, config: AIConfig) {
       }))
     } else {
       const adapter = getVideoAdapter(config.provider)
-      const resolvedImageUrl = await normalizeVideoReferenceUrl(params.imageUrl)
-      const resolvedFirstFrameUrl = await normalizeVideoReferenceUrl(params.firstFrameUrl)
-      const resolvedLastFrameUrl = await normalizeVideoReferenceUrl(params.lastFrameUrl)
-      // MiniMax S2V-01 的 subject_reference 只接受公网 URL；其余场景沿用 dataURL。
-      const isMiniMaxS2V = config.provider === 'minimax' && /^s2v/i.test(record.model || config.model || '')
-      const resolvedReferenceImageUrls = isMiniMaxS2V
-        ? resolvePublicMediaUrls(params.referenceImageUrls, 'image')
+      const isMiniMax = config.provider === 'minimax'
+      const resolvedImageUrl = isMiniMax
+        ? await resolvePublicAssetUrl(params.imageUrl, 'image')
+        : await normalizeVideoReferenceUrl(params.imageUrl)
+      const resolvedFirstFrameUrl = isMiniMax
+        ? await resolvePublicAssetUrl(params.firstFrameUrl, 'image')
+        : await normalizeVideoReferenceUrl(params.firstFrameUrl)
+      const resolvedLastFrameUrl = isMiniMax
+        ? await resolvePublicAssetUrl(params.lastFrameUrl, 'image')
+        : await normalizeVideoReferenceUrl(params.lastFrameUrl)
+      // MiniMax 系列（H3 及 S2V-01 等）要求图片为公网 URL；其余场景沿用 dataURL
+      const resolvedReferenceImageUrls = isMiniMax
+        ? await resolvePublicAssetUrls(params.referenceImageUrls, 'image')
         : await normalizeVideoReferenceUrls(params.referenceImageUrls)
       // 参考视频/音频文件较大，不适合 dataURL 内联，需解析为公网可访问 URL
-      const resolvedReferenceVideoUrls = resolvePublicMediaUrls(params.referenceVideoUrls, 'video')
-      const resolvedReferenceAudioUrls = resolvePublicMediaUrls(params.referenceAudioUrls, 'audio')
-      const resolvedReferenceFileUrl = resolvePublicMediaUrl(params.referenceFileUrl, 'file')
+      const resolvedReferenceVideoUrls = await resolvePublicAssetUrls(params.referenceVideoUrls, 'video')
+      const resolvedReferenceAudioUrls = await resolvePublicAssetUrls(params.referenceAudioUrls, 'audio')
+      const resolvedReferenceFileUrl = await resolvePublicAssetUrl(params.referenceFileUrl, 'file')
       ;({ url, method, headers, body } = adapter.buildGenerateRequest(config, {
         id: record.id,
         model: record.model,
@@ -585,6 +592,8 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
   const localPath = await downloadFile(imageUrl, 'images')
   // 列表页缩略图（前端按命名约定推导地址，失败不影响主流程）
   await generateImageThumb(localPath)
+  // 即时双写到云存储（异步后台处理）
+  void uploadAssetToStorage(localPath)
 
   await db.update(schema.sysTask)
     .set({ resultUrl: imageUrl, localPath, status: 'completed', completedAt: now(), updatedAt: now() })
@@ -598,6 +607,8 @@ async function handleImageComplete(record: SysTaskRecord, imageUrl: string) {
 async function handleImageCompleteBase64(record: SysTaskRecord, base64Data: string, mimeType: string) {
   const localPath = await saveBase64Image(base64Data, mimeType, 'images')
   await generateImageThumb(localPath)
+  // 即时双写到云存储（异步后台处理）
+  void uploadAssetToStorage(localPath)
 
   await db.update(schema.sysTask)
     .set({ localPath, status: 'completed', completedAt: now(), updatedAt: now() })
@@ -640,6 +651,8 @@ async function handleVideoComplete(record: SysTaskRecord, videoUrl: string, dura
       ? record.localPath : await downloadVideo(videoUrl, record.id)
     await db.update(schema.sysTask).set({ localPath, stage: 'saving', updatedAt: now() }).where(eq(schema.sysTask.id, record.id))
     await extractVideoPoster(localPath)
+    // 即时双写到云存储（异步后台处理）
+    void uploadAssetToStorage(localPath)
     // 完成状态与业务回写原子提交；恢复旧任务不能覆盖用户后来生成的视频。
     db.transaction(tx => {
       const newer = record.storyboardId ? tx.select({ id: schema.sysTask.id }).from(schema.sysTask)
